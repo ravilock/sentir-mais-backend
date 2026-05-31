@@ -1,0 +1,340 @@
+openapi: 3.0.3
+info:
+  title: Sentir Mais Backend API
+  version: 0.2.0
+  description: Initial MVP contract for the Go backend with app-owned auth, chat, and weekly dashboard endpoints.
+servers:
+  - url: /
+tags:
+  - name: Auth
+  - name: Chats
+  - name: Dashboard
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created and authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email already registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the authenticated user
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /chats:
+    post:
+      tags: [Chats]
+      summary: Create a chat session
+      operationId: createChat
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChatRequest'
+      responses:
+        '201':
+          description: Chat created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateChatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /chats/{chatId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+    post:
+      tags: [Chats]
+      summary: Send a message to an existing chat
+      operationId: sendMessage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: Assistant response generated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    get:
+      tags: [Chats]
+      summary: List chat history
+      operationId: listMessages
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Chat messages in chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListMessagesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /dashboard/week:
+    get:
+      tags: [Dashboard]
+      summary: Get the current weekly dashboard payload
+      operationId: getWeeklyDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Weekly dashboard summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklySummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+  parameters:
+    ChatID:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: The request payload is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    AuthResponse:
+      type: object
+      additionalProperties: false
+      required: [accessToken, user]
+      properties:
+        accessToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateChatRequest:
+      type: object
+      additionalProperties: false
+      required: [initialMessage]
+      properties:
+        initialMessage:
+          type: string
+          minLength: 1
+    SendMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+    CreateChatResponse:
+      type: object
+      additionalProperties: false
+      required: [chatId, response]
+      properties:
+        chatId:
+          type: string
+        response:
+          $ref: '#/components/schemas/Message'
+    ListMessagesResponse:
+      type: object
+      additionalProperties: false
+      required: [chatId, messages]
+      properties:
+        chatId:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+    Message:
+      type: object
+      additionalProperties: false
+      required: [id, content, sender]
+      properties:
+        id:
+          type: string
+        content:
+          type: string
+        sender:
+          type: integer
+          enum: [0, 1]
+          x-enum-varnames: [USER, ASSISTANT]
+    WeeklySummary:
+      type: object
+      additionalProperties: false
+      required: [weekStart, dominantFeelings, mainEvents, timelinePoints, generatedAt]
+      properties:
+        weekStart:
+          type: string
+          format: date-time
+        dominantFeelings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeelingScore'
+        mainEvents:
+          type: array
+          items:
+            type: string
+        timelinePoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelinePoint'
+        generatedAt:
+          type: string
+          format: date-time
+    FeelingScore:
+      type: object
+      additionalProperties: false
+      required: [label, confidence]
+      properties:
+        label:
+          type: string
+        confidence:
+          type: number
+          format: double
+    TimelinePoint:
+      type: object
+      additionalProperties: false
+      required: [date, primaryFeeling, supportingEvent]
+      properties:
+        date:
+          type: string
+        primaryFeeling:
+          type: string
+        supportingEvent:
+          type: string
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string

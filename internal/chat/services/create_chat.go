@@ -10,10 +10,12 @@ import (
 )
 
 type CreateChatService struct {
-	chats     chatCreator
-	messages  messageCreator
-	responder llmResponder
-	clock     clock
+	chats      chatCreator
+	messages   messageCreator
+	responder  llmResponder
+	classifier feelingClassifier
+	analyses   messageAnalysisCreator
+	clock      clock
 }
 
 func NewCreateChatService(chats chatCreator, messages messageCreator, responder llmResponder) *CreateChatService {
@@ -23,6 +25,12 @@ func NewCreateChatService(chats chatCreator, messages messageCreator, responder 
 		responder: responder,
 		clock:     realClock{},
 	}
+}
+
+func (s *CreateChatService) WithAnalysis(classifier feelingClassifier, analyses messageAnalysisCreator) *CreateChatService {
+	s.classifier = classifier
+	s.analyses = analyses
+	return s
 }
 
 func (s *CreateChatService) CreateChat(ctx context.Context, userID, initialMessage string) (domain.Chat, domain.Message, error) {
@@ -64,6 +72,9 @@ func (s *CreateChatService) CreateChat(ctx context.Context, userID, initialMessa
 		return domain.Chat{}, domain.Message{}, err
 	}
 	if err := s.messages.Create(ctx, assistantMessage); err != nil {
+		return domain.Chat{}, domain.Message{}, err
+	}
+	if err := persistMessageAnalysis(ctx, s.classifier, s.analyses, s.clock, userMessage); err != nil {
 		return domain.Chat{}, domain.Message{}, err
 	}
 

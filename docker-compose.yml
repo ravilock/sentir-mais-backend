@@ -1,6 +1,6 @@
 services:
   mongodb:
-    image: mongo:8.0
+    image: mongo:7.0
     container_name: sentir-mais-mongodb
     restart: unless-stopped
     ports:
@@ -20,5 +20,24 @@ services:
     ports:
       - "8081:8081"
 
+  classifier:
+    image: ${CLASSIFIER_IMAGE:-ghcr.io/ravilock/sentir-mais-classifier:latest-gpu}
+    container_name: sentir-mais-classifier
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8010
+      API_KEY: ${CLASSIFIER_API_KEY:-sentir-mais-local-classifier-key}
+      MODEL_NAME: ${CLASSIFIER_MODEL_NAME:-MoritzLaurer/mDeBERTa-v3-base-mnli-xnli}
+      DEFAULT_LABELS: ${CLASSIFIER_DEFAULT_LABELS:-happy,sad,stressed,angry,doubtful,anxious,relaxed,tense}
+      HYPOTHESIS_TEMPLATE: ${CLASSIFIER_HYPOTHESIS_TEMPLATE:-This text expresses {}.}
+      TRUST_REMOTE_CODE: ${CLASSIFIER_TRUST_REMOTE_CODE:-false}
+      MODEL_CACHE_DIR: ${CLASSIFIER_MODEL_CACHE_DIR:-/models}
+    ports:
+      - "8010:8010"
+    volumes:
+      - classifier_models:/models
+
 volumes:
   mongodb_data:
+  classifier_models:

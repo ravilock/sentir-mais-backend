@@ -6,6 +6,7 @@ endif
 
 SVC_DB := mongodb
 SVC_DB_UI := mongo-express
+SVC_CLASSIFIER := classifier
 LOGS_CMD := $(DOCKER_COMPOSE) logs --follow --tail=20
 GOCACHE ?= /tmp/sentir-mais-go-cache
 GO_ENV := env GOCACHE=$(GOCACHE)
@@ -34,8 +35,16 @@ run-api: ## Start the API locally
 	@$(GO_ENV) go run ./cmd/sentir-mais-api
 
 .PHONY: run-db
-run-db: ## Start MongoDB and Mongo Express
-	@$(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI)
+run-db: ## Start MongoDB, Mongo Express, and the classifier
+	@$(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER)
+
+.PHONY: run-db-gpu
+run-db-gpu: ## Start local dependencies with the published NVIDIA GPU classifier image
+	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest-gpu $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER)
+
+.PHONY: run-db-cpu
+run-db-cpu: ## Start local dependencies with the published CPU classifier image
+	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER)
 
 stop: stop-all ## Stop local dependencies
 
@@ -51,6 +60,10 @@ stop-db: ## Stop MongoDB
 stop-db-ui: ## Stop Mongo Express
 	@$(DOCKER_COMPOSE) stop $(SVC_DB_UI)
 
+.PHONY: stop-classifier
+stop-classifier: ## Stop the classifier service
+	@$(DOCKER_COMPOSE) stop $(SVC_CLASSIFIER)
+
 .PHONY: logs-db
 logs-db: ## Show MongoDB logs
 	@$(LOGS_CMD) $(SVC_DB)
@@ -58,6 +71,10 @@ logs-db: ## Show MongoDB logs
 .PHONY: logs-db-ui
 logs-db-ui: ## Show Mongo Express logs
 	@$(LOGS_CMD) $(SVC_DB_UI)
+
+.PHONY: logs-classifier
+logs-classifier: ## Show classifier logs
+	@$(LOGS_CMD) $(SVC_CLASSIFIER)
 
 .PHONY: logs-all
 logs-all: ## Show logs for all docker-compose services

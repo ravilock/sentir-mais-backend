@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ravilock/sentir-mais-backend/internal/chat"
+	"github.com/ravilock/sentir-mais-backend/internal/classifier"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -106,5 +107,65 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 
 		require.ErrorIs(t, err, chat.ErrChatNotFound)
 		require.Equal(t, domain.Message{}, response)
+	})
+
+	t.Run("should classify and persist user message analysis", func(t *testing.T) {
+		chats := newMockChatFinder(t)
+		messages := newMockMessageCreator(t)
+		history := newMockMessageLister(t)
+		updater := newMockChatUpdater(t)
+		responder := newMockLlmResponder(t)
+		feelingClassifier := newMockFeelingClassifier(t)
+		analyses := newMockMessageAnalysisCreator(t)
+		clock := newMockClock(t)
+
+		now := time.Date(2026, time.May, 31, 16, 0, 0, 0, time.UTC)
+		service := NewSendMessageService(chats, messages, history, updater, responder).WithAnalysis(feelingClassifier, analyses)
+		service.clock = clock
+
+		chatRecord := domain.Chat{
+			ID:        "cht_123",
+			UserID:    "usr_123",
+			CreatedAt: now.Add(-time.Hour),
+			UpdatedAt: now.Add(-time.Minute),
+		}
+
+		chats.EXPECT().FindByID(mock.Anything, "cht_123").Return(chatRecord, nil).Once()
+		clock.EXPECT().Now().Return(now).Twice()
+		messages.EXPECT().Create(mock.Anything, mock.AnythingOfType("domain.Message")).Return(nil).Twice()
+		history.EXPECT().ListByChatID(mock.Anything, "cht_123").Return([]domain.Message{{ID: "msg_prev", ChatID: "cht_123", UserID: "usr_123", Content: "prev"}}, nil).Once()
+		responder.EXPECT().GenerateReply(mock.Anything, mock.AnythingOfType("[]domain.Message")).Return("assistant reply", nil).Once()
+		updater.EXPECT().Update(mock.Anything, mock.AnythingOfType("domain.Chat")).Return(nil).Once()
+		feelingClassifier.EXPECT().
+			Classify(mock.Anything, "new message").
+			Return(domain.ClassificationResult{
+				PrimaryFeeling: domain.FeelingScore{Label: "stressed", Confidence: 0.82},
+				SecondaryFeelings: []domain.FeelingScore{
+					{Label: "tense", Confidence: 0.7},
+				},
+				AllScores: []domain.FeelingScore{
+					{Label: "stressed", Confidence: 0.82},
+					{Label: "tense", Confidence: 0.7},
+				},
+				ModelName: "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+			}, nil).
+			Once()
+		analyses.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
+			RunAndReturn(func(_ context.Context, analysis domain.MessageAnalysis) error {
+				require.Equal(t, "usr_123", analysis.UserID)
+				require.Equal(t, "cht_123", analysis.ChatID)
+				require.Equal(t, "new message", analysis.SourceText)
+				require.Equal(t, "stressed", analysis.PrimaryFeeling.Label)
+				require.Equal(t, classifier.ProviderName, analysis.ClassifierProvider)
+				require.Equal(t, now, analysis.CreatedAt)
+				return nil
+			}).
+			Once()
+
+		response, err := service.SendMessage(context.Background(), "cht_123", "usr_123", " new message ")
+
+		require.NoError(t, err)
+		require.Equal(t, "assistant reply", response.Content)
 	})
 }

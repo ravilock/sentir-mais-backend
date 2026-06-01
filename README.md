@@ -21,10 +21,22 @@ Primeiro backend executável para o MVP do Sentir Mais, agora alinhado ao bootst
 
 ## Rodando localmente
 
-Suba o MongoDB:
+Suba as dependencias locais:
 
 ```bash
 docker compose up -d
+```
+
+Para subir o classifier com GPU NVIDIA:
+
+```bash
+docker compose up -d classifier
+```
+
+Ou:
+
+```bash
+make run-db-gpu
 ```
 
 Depois rode a API:
@@ -40,11 +52,42 @@ Variáveis opcionais:
 - `CORS_ALLOWED_ORIGINS` (CSV; default `http://localhost:3000,http://localhost:5173,http://localhost:4000`)
 - `MONGO_URI` (default `mongodb://localhost:27017`)
 - `MONGO_DATABASE` (default `sentir-mais`)
+- `CLASSIFIER_BASE_URL` (default empty; example `http://localhost:8010`)
+- `CLASSIFIER_API_KEY` (default empty; sent as the `Authorization` header to the classifier)
+- `CLASSIFIER_TIMEOUT_SECONDS` (default `10`)
 
 O compose local sobe:
 
 - MongoDB em `mongodb://localhost:27017`
 - Mongo Express em `http://localhost:8081`
+- Classifier em `http://localhost:8010`
+
+O serviço `classifier` agora aceita override por imagem:
+
+- default: `ghcr.io/ravilock/sentir-mais-classifier:latest-gpu`
+- CPU: `ghcr.io/ravilock/sentir-mais-classifier:latest`
+
+Para trocar a variante, exporte `CLASSIFIER_IMAGE` antes de subir o compose.
+
+Exemplo para forçar CPU:
+
+```bash
+CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest docker compose up -d classifier
+```
+
+Pré-requisitos no host:
+
+- driver NVIDIA instalado
+- `nvidia-container-toolkit` configurado no Docker
+
+Para usar o classifier do compose com a API rodando localmente:
+
+```bash
+export CLASSIFIER_BASE_URL=http://localhost:8010
+export CLASSIFIER_API_KEY=sentir-mais-local-classifier-key
+```
+
+Se `CLASSIFIER_BASE_URL` estiver configurada, o backend classifica cada mensagem do usuario e persiste o resultado em `message_analyses`.
 
 ## Rotas
 

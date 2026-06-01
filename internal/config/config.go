@@ -13,6 +13,9 @@ type Config struct {
 	CORSAllowedOrigins []string
 	MongoURI           string
 	MongoDatabase      string
+	ClassifierBaseURL  string
+	ClassifierAPIKey   string
+	ClassifierTimeout  time.Duration
 }
 
 func Load() Config {
@@ -22,6 +25,9 @@ func Load() Config {
 		CORSAllowedOrigins: getCSVEnv("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000", "http://localhost:5173", "http://localhost:4000"}),
 		MongoURI:           getEnv("MONGO_URI", "mongodb://localhost:27017"),
 		MongoDatabase:      getEnv("MONGO_DATABASE", "sentir-mais"),
+		ClassifierBaseURL:  getEnv("CLASSIFIER_BASE_URL", ""),
+		ClassifierAPIKey:   getEnv("CLASSIFIER_API_KEY", ""),
+		ClassifierTimeout:  getDurationSeconds("CLASSIFIER_TIMEOUT_SECONDS", 10),
 	}
 }
 

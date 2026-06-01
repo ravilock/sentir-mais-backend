@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"time"
 
+	analysisrepositories "github.com/ravilock/sentir-mais-backend/internal/analysis/repositories"
 	authrepositories "github.com/ravilock/sentir-mais-backend/internal/auth/repositories"
 	authservices "github.com/ravilock/sentir-mais-backend/internal/auth/services"
 	chatrepositories "github.com/ravilock/sentir-mais-backend/internal/chat/repositories"
 	chatservices "github.com/ravilock/sentir-mais-backend/internal/chat/services"
+	"github.com/ravilock/sentir-mais-backend/internal/classifier"
 	"github.com/ravilock/sentir-mais-backend/internal/config"
 	dashboardservices "github.com/ravilock/sentir-mais-backend/internal/dashboard/services"
 	apihandlers "github.com/ravilock/sentir-mais-backend/internal/http/handlers"
@@ -74,13 +76,20 @@ func NewServer(cfg config.Config) (Server, error) {
 		return nil, err
 	}
 
+	messageAnalysisRepository, err := analysisrepositories.NewMessageAnalysisRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
+
 	registerService := authservices.NewRegisterService(userRepository, userRepository, sessionRepository, cfg.SessionTTL)
 	loginService := authservices.NewLoginService(userRepository, sessionRepository, cfg.SessionTTL)
 	authenticateService := authservices.NewAuthenticateService(sessionRepository, userRepository)
 
 	stubClient := llm.NewStubSupportClient()
-	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, stubClient)
-	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, stubClient)
+	classifierClient := classifier.NewClient(cfg.ClassifierBaseURL, cfg.ClassifierAPIKey, cfg.ClassifierTimeout)
+	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, stubClient).WithAnalysis(classifierClient, messageAnalysisRepository)
+	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, stubClient).WithAnalysis(classifierClient, messageAnalysisRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	dashboardService := dashboardservices.NewGetWeekService()
 

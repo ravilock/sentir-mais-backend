@@ -10,12 +10,14 @@ import (
 )
 
 type SendMessageService struct {
-	chats     chatFinder
-	messages  messageCreator
-	history   messageLister
-	updater   chatUpdater
-	responder llmResponder
-	clock     clock
+	chats      chatFinder
+	messages   messageCreator
+	history    messageLister
+	updater    chatUpdater
+	responder  llmResponder
+	classifier feelingClassifier
+	analyses   messageAnalysisCreator
+	clock      clock
 }
 
 func NewSendMessageService(chats chatFinder, messages messageCreator, history messageLister, updater chatUpdater, responder llmResponder) *SendMessageService {
@@ -27,6 +29,12 @@ func NewSendMessageService(chats chatFinder, messages messageCreator, history me
 		responder: responder,
 		clock:     realClock{},
 	}
+}
+
+func (s *SendMessageService) WithAnalysis(classifier feelingClassifier, analyses messageAnalysisCreator) *SendMessageService {
+	s.classifier = classifier
+	s.analyses = analyses
+	return s
 }
 
 func (s *SendMessageService) SendMessage(ctx context.Context, chatID, userID, content string) (domain.Message, error) {
@@ -73,6 +81,9 @@ func (s *SendMessageService) SendMessage(ctx context.Context, chatID, userID, co
 
 	chatRecord.UpdatedAt = now
 	if err := s.updater.Update(ctx, chatRecord); err != nil {
+		return domain.Message{}, err
+	}
+	if err := persistMessageAnalysis(ctx, s.classifier, s.analyses, s.clock, userMessage); err != nil {
 		return domain.Message{}, err
 	}
 

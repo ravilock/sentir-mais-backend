@@ -45,6 +45,27 @@ type FeelingScore struct {
 	Confidence float64
 }
 
+type ClassificationResult struct {
+	PrimaryFeeling    FeelingScore
+	SecondaryFeelings []FeelingScore
+	AllScores         []FeelingScore
+	ModelName         string
+}
+
+type MessageAnalysis struct {
+	ID                 string
+	MessageID          string
+	ChatID             string
+	UserID             string
+	SourceText         string
+	PrimaryFeeling     FeelingScore
+	SecondaryFeelings  []FeelingScore
+	AllScores          []FeelingScore
+	ClassifierProvider string
+	ClassifierModel    string
+	CreatedAt          time.Time
+}
+
 type TimelinePoint struct {
 	Date            string
 	PrimaryFeeling  string

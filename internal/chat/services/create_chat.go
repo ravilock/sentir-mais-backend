@@ -13,6 +13,7 @@ type CreateChatService struct {
 	chats      chatCreator
 	messages   messageCreator
 	responder  llmResponder
+	extractor  llmExtractor
 	classifier feelingClassifier
 	analyses   messageAnalysisCreator
 	clock      clock
@@ -30,6 +31,11 @@ func NewCreateChatService(chats chatCreator, messages messageCreator, responder 
 func (s *CreateChatService) WithAnalysis(classifier feelingClassifier, analyses messageAnalysisCreator) *CreateChatService {
 	s.classifier = classifier
 	s.analyses = analyses
+	return s
+}
+
+func (s *CreateChatService) WithExtraction(extractor llmExtractor) *CreateChatService {
+	s.extractor = extractor
 	return s
 }
 
@@ -74,7 +80,7 @@ func (s *CreateChatService) CreateChat(ctx context.Context, userID, initialMessa
 	if err := s.messages.Create(ctx, assistantMessage); err != nil {
 		return domain.Chat{}, domain.Message{}, err
 	}
-	if err := persistMessageAnalysis(ctx, s.classifier, s.analyses, s.clock, userMessage); err != nil {
+	if err := persistMessageAnalysis(ctx, s.classifier, s.extractor, s.analyses, s.clock, []domain.Message{userMessage, assistantMessage}, userMessage); err != nil {
 		return domain.Chat{}, domain.Message{}, err
 	}
 

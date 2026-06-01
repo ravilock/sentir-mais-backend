@@ -15,6 +15,7 @@ type SendMessageService struct {
 	history    messageLister
 	updater    chatUpdater
 	responder  llmResponder
+	extractor  llmExtractor
 	classifier feelingClassifier
 	analyses   messageAnalysisCreator
 	clock      clock
@@ -34,6 +35,11 @@ func NewSendMessageService(chats chatFinder, messages messageCreator, history me
 func (s *SendMessageService) WithAnalysis(classifier feelingClassifier, analyses messageAnalysisCreator) *SendMessageService {
 	s.classifier = classifier
 	s.analyses = analyses
+	return s
+}
+
+func (s *SendMessageService) WithExtraction(extractor llmExtractor) *SendMessageService {
+	s.extractor = extractor
 	return s
 }
 
@@ -83,7 +89,8 @@ func (s *SendMessageService) SendMessage(ctx context.Context, chatID, userID, co
 	if err := s.updater.Update(ctx, chatRecord); err != nil {
 		return domain.Message{}, err
 	}
-	if err := persistMessageAnalysis(ctx, s.classifier, s.analyses, s.clock, userMessage); err != nil {
+	analysisHistory := append(append([]domain.Message{}, history...), assistantMessage)
+	if err := persistMessageAnalysis(ctx, s.classifier, s.extractor, s.analyses, s.clock, analysisHistory, userMessage); err != nil {
 		return domain.Message{}, err
 	}
 

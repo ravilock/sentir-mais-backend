@@ -31,6 +31,10 @@ type llmResponder interface {
 	GenerateReply(ctx context.Context, history []domain.Message) (string, error)
 }
 
+type llmExtractor interface {
+	ExtractEvent(ctx context.Context, history []domain.Message) (domain.ExtractedEvent, error)
+}
+
 type feelingClassifier interface {
 	Classify(ctx context.Context, text string) (domain.ClassificationResult, error)
 }

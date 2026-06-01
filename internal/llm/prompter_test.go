@@ -72,6 +72,65 @@ func TestPrompterClientGenerateReplyReturnsErrorOnNon2xx(t *testing.T) {
 	require.Empty(t, reply)
 }
 
+func TestPrompterClientExtractEventParsesStructuredOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		capturedBody = string(body)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"kind":"extraction",
+				"provider":"openrouter",
+				"model":"google/gemini-2.5-flash-lite",
+				"output_text":"{\"enough_context\":true,\"context_gaps\":[],\"event_summary\":\"The user argued with their manager.\",\"what_happened\":\"The user argued with their manager at work.\",\"felt_emotions_described_by_user\":[\"anxious\"],\"user_reaction\":\"The user became defensive.\",\"expected_outcome_or_self_expectation\":\"The user expected more respect.\",\"people_involved\":[\"manager\"],\"setting\":\"work\",\"time_reference\":\"today\",\"risk_flags\":{\"self_harm\":false,\"suicidal_ideation\":false,\"immediate_danger\":false},\"confidence_notes\":\"Directly stated.\"}"
+			}`)),
+		}, nil
+	})
+
+	event, err := client.ExtractEvent(context.Background(), []domain.Message{
+		{Sender: domain.SenderUser, Content: "I argued with my manager and felt anxious"},
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, capturedBody, `"kind":"extraction"`)
+	require.Contains(t, capturedBody, `"response_format":{"type":"json_object"}`)
+	require.Equal(t, "The user argued with their manager.", event.EventSummary)
+	require.True(t, event.EnoughContext)
+	require.Equal(t, []string{"anxious"}, event.FeltEmotionsDescribedByUser)
+}
+
+func TestPrompterClientExtractEventReturnsErrorOnInvalidJSONPayload(t *testing.T) {
+	t.Parallel()
+
+	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"kind":"extraction",
+				"provider":"openrouter",
+				"model":"google/gemini-2.5-flash-lite",
+				"output_text":"not-json"
+			}`)),
+		}, nil
+	})
+
+	event, err := client.ExtractEvent(context.Background(), []domain.Message{
+		{Sender: domain.SenderUser, Content: "hello"},
+	})
+
+	require.ErrorContains(t, err, "decode extracted event payload")
+	require.Equal(t, domain.ExtractedEvent{}, event)
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {

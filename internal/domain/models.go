@@ -45,6 +45,36 @@ type FeelingScore struct {
 	Confidence float64
 }
 
+type ContextGap string
+
+const (
+	ContextGapWhatHappened                 ContextGap = "what_happened"
+	ContextGapFeltEmotionsDescribedByUser  ContextGap = "felt_emotions_described_by_user"
+	ContextGapUserReaction                 ContextGap = "user_reaction"
+	ContextGapExpectedOutcomeOrExpectation ContextGap = "expected_outcome_or_self_expectation"
+)
+
+type RiskFlags struct {
+	SelfHarm         bool
+	SuicidalIdeation bool
+	ImmediateDanger  bool
+}
+
+type ExtractedEvent struct {
+	EnoughContext                    bool
+	ContextGaps                      []ContextGap
+	EventSummary                     string
+	WhatHappened                     string
+	FeltEmotionsDescribedByUser      []string
+	UserReaction                     string
+	ExpectedOutcomeOrSelfExpectation string
+	PeopleInvolved                   []string
+	Setting                          string
+	TimeReference                    string
+	RiskFlags                        RiskFlags
+	ConfidenceNotes                  string
+}
+
 type ClassificationResult struct {
 	PrimaryFeeling    FeelingScore
 	SecondaryFeelings []FeelingScore
@@ -61,6 +91,9 @@ type MessageAnalysis struct {
 	PrimaryFeeling     FeelingScore
 	SecondaryFeelings  []FeelingScore
 	AllScores          []FeelingScore
+	EnoughContext      *bool
+	ContextGaps        []ContextGap
+	ExtractedEvent     *ExtractedEvent
 	ClassifierProvider string
 	ClassifierModel    string
 	CreatedAt          time.Time

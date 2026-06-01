@@ -11,19 +11,13 @@ import (
 func persistMessageAnalysis(
 	ctx context.Context,
 	classifierClient feelingClassifier,
+	extractor llmExtractor,
 	analyses messageAnalysisCreator,
 	serviceClock clock,
+	history []domain.Message,
 	message domain.Message,
 ) error {
-	if classifierClient == nil || analyses == nil {
-		return nil
-	}
-
-	result, err := classifierClient.Classify(ctx, message.Content)
-	if err != nil {
-		return err
-	}
-	if result.PrimaryFeeling.Label == "" {
+	if analyses == nil || (classifierClient == nil && extractor == nil) {
 		return nil
 	}
 
@@ -32,17 +26,48 @@ func persistMessageAnalysis(
 		return err
 	}
 
-	return analyses.Create(ctx, domain.MessageAnalysis{
-		ID:                 analysisID,
-		MessageID:          message.ID,
-		ChatID:             message.ChatID,
-		UserID:             message.UserID,
-		SourceText:         message.Content,
-		PrimaryFeeling:     result.PrimaryFeeling,
-		SecondaryFeelings:  result.SecondaryFeelings,
-		AllScores:          result.AllScores,
-		ClassifierProvider: classifier.ProviderName,
-		ClassifierModel:    result.ModelName,
-		CreatedAt:          serviceClock.Now(),
-	})
+	analysis := domain.MessageAnalysis{
+		ID:         analysisID,
+		MessageID:  message.ID,
+		ChatID:     message.ChatID,
+		UserID:     message.UserID,
+		SourceText: message.Content,
+		CreatedAt:  serviceClock.Now(),
+	}
+
+	if extractor != nil {
+		extractedEvent, err := extractor.ExtractEvent(ctx, history)
+		if err != nil {
+			return err
+		}
+
+		analysis.ExtractedEvent = &extractedEvent
+		analysis.EnoughContext = boolPointer(extractedEvent.EnoughContext)
+		analysis.ContextGaps = extractedEvent.ContextGaps
+	}
+
+	if classifierClient != nil {
+		result, err := classifierClient.Classify(ctx, message.Content)
+		if err != nil {
+			return err
+		}
+
+		analysis.PrimaryFeeling = result.PrimaryFeeling
+		analysis.SecondaryFeelings = result.SecondaryFeelings
+		analysis.AllScores = result.AllScores
+		if result.PrimaryFeeling.Label != "" {
+			analysis.ClassifierProvider = classifier.ProviderName
+			analysis.ClassifierModel = result.ModelName
+		}
+	}
+
+	if analysis.ExtractedEvent == nil && analysis.PrimaryFeeling.Label == "" {
+		return nil
+	}
+
+	return analyses.Create(ctx, analysis)
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }

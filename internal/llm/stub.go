@@ -7,10 +7,6 @@ import (
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
 )
 
-type SupportClient interface {
-	GenerateReply(ctx context.Context, history []domain.Message) (string, error)
-}
-
 type StubSupportClient struct{}
 
 func NewStubSupportClient() StubSupportClient {

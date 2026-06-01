@@ -4,9 +4,10 @@ import (
 	"errors"
 	"net/http"
 
+	apirequests "github.com/ravilock/sentir-mais-backend/internal/api/requests"
+	apiresponses "github.com/ravilock/sentir-mais-backend/internal/api/responses"
 	"github.com/ravilock/sentir-mais-backend/internal/auth"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
-	"github.com/ravilock/sentir-mais-backend/internal/http/dto"
 	"github.com/ravilock/sentir-mais-backend/internal/http/middleware"
 )
 
@@ -23,7 +24,7 @@ func NewAuthHandler(registerer registerer, loginer loginer) *AuthHandler {
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	var request dto.RegisterRequest
+	var request apirequests.RegisterRequest
 	if err := decodeJSON(r, &request); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -42,14 +43,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, dto.AuthResponse{
+	respondJSON(w, http.StatusCreated, apiresponses.AuthResponse{
 		AccessToken: result.AccessToken,
 		User:        toUserResponse(result.User),
 	})
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	var request dto.LoginRequest
+	var request apirequests.LoginRequest
 	if err := decodeJSON(r, &request); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -66,7 +67,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, dto.AuthResponse{
+	respondJSON(w, http.StatusOK, apiresponses.AuthResponse{
 		AccessToken: result.AccessToken,
 		User:        toUserResponse(result.User),
 	})
@@ -82,8 +83,8 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, toUserResponse(user))
 }
 
-func toUserResponse(user domain.User) dto.UserResponse {
-	return dto.UserResponse{
+func toUserResponse(user domain.User) apiresponses.UserResponse {
+	return apiresponses.UserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
 		CreatedAt: user.CreatedAt,

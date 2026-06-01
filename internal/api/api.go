@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,7 +17,7 @@ import (
 	apihandlers "github.com/ravilock/sentir-mais-backend/internal/http/handlers"
 	httpmiddleware "github.com/ravilock/sentir-mais-backend/internal/http/middleware"
 	"github.com/ravilock/sentir-mais-backend/internal/llm"
-	"github.com/ravilock/sentir-mais-backend/internal/storage/memory"
+	"github.com/ravilock/sentir-mais-backend/internal/storage/mongodb"
 )
 
 type Server interface {
@@ -26,6 +28,7 @@ type Server interface {
 type server struct {
 	httpServer *http.Server
 	logger     *slog.Logger
+	close      func() error
 
 	authHandler      *apihandlers.AuthHandler
 	chatHandler      *apihandlers.ChatHandler
@@ -34,11 +37,37 @@ type server struct {
 }
 
 func NewServer(cfg config.Config) (Server, error) {
-	store := memory.NewStore()
-	userRepository := authrepositories.NewUserRepository(store)
-	sessionRepository := authrepositories.NewSessionRepository(store)
-	chatRepository := chatrepositories.NewChatRepository(store)
-	messageRepository := chatrepositories.NewMessageRepository(store)
+	storeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	connection, err := mongodb.Connect(storeCtx, cfg.MongoURI, cfg.MongoDatabase)
+	if err != nil {
+		return nil, err
+	}
+
+	userRepository, err := authrepositories.NewUserRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
+
+	sessionRepository, err := authrepositories.NewSessionRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
+
+	chatRepository, err := chatrepositories.NewChatRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
+
+	messageRepository, err := chatrepositories.NewMessageRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
 
 	registerService := authservices.NewRegisterService(userRepository, userRepository, sessionRepository, cfg.SessionTTL)
 	loginService := authservices.NewLoginService(userRepository, sessionRepository, cfg.SessionTTL)
@@ -53,6 +82,7 @@ func NewServer(cfg config.Config) (Server, error) {
 	logger := newLogger()
 	srv := &server{
 		logger:           logger,
+		close:            func() error { return connection.Close(context.Background()) },
 		authHandler:      apihandlers.NewAuthHandler(registerService, loginService),
 		chatHandler:      apihandlers.NewChatHandler(createChatService, sendMessageService, listMessagesService),
 		dashboardHandler: apihandlers.NewDashboardHandler(dashboardService),
@@ -77,7 +107,14 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) Start() error {
 	s.logger.Info("starting api server", "address", s.httpServer.Addr)
-	return s.httpServer.ListenAndServe()
+	err := s.httpServer.ListenAndServe()
+	if s.close != nil {
+		if closeErr := s.close(); closeErr != nil {
+			return errors.Join(err, closeErr)
+		}
+	}
+
+	return err
 }
 
 func (s *server) registerRoutes(mux *http.ServeMux) {

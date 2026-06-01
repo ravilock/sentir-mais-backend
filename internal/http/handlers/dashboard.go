@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/ravilock/sentir-mais-backend/internal/http/dto"
+	apiresponses "github.com/ravilock/sentir-mais-backend/internal/api/responses"
 	"github.com/ravilock/sentir-mais-backend/internal/http/middleware"
 )
 
@@ -23,23 +23,23 @@ func (h *DashboardHandler) GetWeek(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summary := h.service.GetWeek(r.Context(), user.ID)
-	response := dto.WeeklySummaryResponse{
+	response := apiresponses.WeeklySummaryResponse{
 		WeekStart:        summary.WeekStart,
-		DominantFeelings: make([]dto.FeelingScoreResponse, 0, len(summary.DominantFeelings)),
+		DominantFeelings: make([]apiresponses.FeelingScoreResponse, 0, len(summary.DominantFeelings)),
 		MainEvents:       summary.MainEvents,
-		TimelinePoints:   make([]dto.TimelinePointResponse, 0, len(summary.TimelinePoints)),
+		TimelinePoints:   make([]apiresponses.TimelinePointResponse, 0, len(summary.TimelinePoints)),
 		GeneratedAt:      summary.GeneratedAt,
 	}
 
 	for _, feeling := range summary.DominantFeelings {
-		response.DominantFeelings = append(response.DominantFeelings, dto.FeelingScoreResponse{
+		response.DominantFeelings = append(response.DominantFeelings, apiresponses.FeelingScoreResponse{
 			Label:      feeling.Label,
 			Confidence: feeling.Confidence,
 		})
 	}
 
 	for _, point := range summary.TimelinePoints {
-		response.TimelinePoints = append(response.TimelinePoints, dto.TimelinePointResponse{
+		response.TimelinePoints = append(response.TimelinePoints, apiresponses.TimelinePointResponse{
 			Date:            point.Date,
 			PrimaryFeeling:  point.PrimaryFeeling,
 			SupportingEvent: point.SupportingEvent,

@@ -1,12 +1,4 @@
-package dto
-
-type CreateChatRequest struct {
-	InitialMessage string `json:"initialMessage"`
-}
-
-type SendMessageRequest struct {
-	Message string `json:"message"`
-}
+package responses
 
 type CreateChatResponse struct {
 	ChatID   string          `json:"chatId"`

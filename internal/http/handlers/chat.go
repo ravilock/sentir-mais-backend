@@ -4,9 +4,10 @@ import (
 	"errors"
 	"net/http"
 
+	apirequests "github.com/ravilock/sentir-mais-backend/internal/api/requests"
+	apiresponses "github.com/ravilock/sentir-mais-backend/internal/api/responses"
 	"github.com/ravilock/sentir-mais-backend/internal/chat"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
-	"github.com/ravilock/sentir-mais-backend/internal/http/dto"
 	"github.com/ravilock/sentir-mais-backend/internal/http/middleware"
 )
 
@@ -31,7 +32,7 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var request dto.CreateChatRequest
+	var request apirequests.CreateChatRequest
 	if err := decodeJSON(r, &request); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -48,7 +49,7 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, dto.CreateChatResponse{
+	respondJSON(w, http.StatusCreated, apiresponses.CreateChatResponse{
 		ChatID:   chatRecord.ID,
 		Response: toMessageResponse(response),
 	})
@@ -61,7 +62,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var request dto.SendMessageRequest
+	var request apirequests.SendMessageRequest
 	if err := decodeJSON(r, &request); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -102,9 +103,9 @@ func (h *ChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := dto.ListMessagesResponse{
+	response := apiresponses.ListMessagesResponse{
 		ChatID:   chatID,
-		Messages: make([]dto.MessageResponse, 0, len(messages)),
+		Messages: make([]apiresponses.MessageResponse, 0, len(messages)),
 	}
 	for _, message := range messages {
 		response.Messages = append(response.Messages, toMessageResponse(message))
@@ -113,8 +114,8 @@ func (h *ChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
-func toMessageResponse(message domain.Message) dto.MessageResponse {
-	return dto.MessageResponse{
+func toMessageResponse(message domain.Message) apiresponses.MessageResponse {
+	return apiresponses.MessageResponse{
 		ID:      message.ID,
 		Content: message.Content,
 		Sender:  int(message.Sender),

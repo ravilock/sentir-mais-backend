@@ -1,0 +1,24 @@
+services:
+  mongodb:
+    image: mongo:8.0
+    container_name: sentir-mais-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  mongo-express:
+    image: mongo-express:1.0.2-20
+    container_name: sentir-mais-mongo-express
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "8081:8081"
+
+volumes:
+  mongodb_data:

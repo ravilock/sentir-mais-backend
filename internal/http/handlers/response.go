@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/ravilock/sentir-mais-backend/internal/http/dto"
+	apiresponses "github.com/ravilock/sentir-mais-backend/internal/api/responses"
 )
 
 func decodeJSON(r *http.Request, target any) error {
@@ -24,5 +24,5 @@ func respondJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func respondError(w http.ResponseWriter, status int, message string) {
-	respondJSON(w, status, dto.ErrorResponse{Message: message})
+	respondJSON(w, status, apiresponses.ErrorResponse{Message: message})
 }

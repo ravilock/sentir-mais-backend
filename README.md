@@ -17,12 +17,17 @@ Primeiro backend executável para o MVP do Sentir Mais, agora alinhado ao bootst
 - resposta conversacional stubada atrás de uma interface de LLM
 - middlewares básicos de request id, log, recover e CORS
 - aliases versionados em `/api/v1/*` sem remover as rotas atuais
-
-## Estado atual
-
-O armazenamento ainda é em memória para manter o backend funcional enquanto a camada MongoDB não é ligada. A separação entre serviços, handlers e repositórios já deixa o caminho aberto para trocar essa implementação sem quebrar o contrato HTTP.
+- persistência em MongoDB para usuários, sessões, chats e mensagens
 
 ## Rodando localmente
+
+Suba o MongoDB:
+
+```bash
+docker compose up -d
+```
+
+Depois rode a API:
 
 ```bash
 go run ./cmd/sentir-mais-api
@@ -30,10 +35,16 @@ go run ./cmd/sentir-mais-api
 
 Variáveis opcionais:
 
-- `HTTP_ADDRESS` (default `:8080`)
 - `HTTP_ADDRESS` (default `:8001`)
 - `SESSION_TTL_SECONDS` (default `604800`)
 - `CORS_ALLOWED_ORIGINS` (CSV; default `http://localhost:3000,http://localhost:5173,http://localhost:4000`)
+- `MONGO_URI` (default `mongodb://localhost:27017`)
+- `MONGO_DATABASE` (default `sentir-mais`)
+
+O compose local sobe:
+
+- MongoDB em `mongodb://localhost:27017`
+- Mongo Express em `http://localhost:8081`
 
 ## Rotas
 

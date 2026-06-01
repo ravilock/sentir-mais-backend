@@ -52,6 +52,9 @@ Variáveis opcionais:
 - `CORS_ALLOWED_ORIGINS` (CSV; default `http://localhost:3000,http://localhost:5173,http://localhost:4000`)
 - `MONGO_URI` (default `mongodb://localhost:27017`)
 - `MONGO_DATABASE` (default `sentir-mais`)
+- `PROMPTER_BASE_URL` (default empty; example `http://localhost:8020`)
+- `PROMPTER_API_KEY` (default empty; sent as the `Authorization` header to the prompter)
+- `PROMPTER_TIMEOUT_SECONDS` (default `10`)
 - `CLASSIFIER_BASE_URL` (default empty; example `http://localhost:8010`)
 - `CLASSIFIER_API_KEY` (default empty; sent as the `Authorization` header to the classifier)
 - `CLASSIFIER_TIMEOUT_SECONDS` (default `10`)
@@ -60,6 +63,7 @@ O compose local sobe:
 
 - MongoDB em `mongodb://localhost:27017`
 - Mongo Express em `http://localhost:8081`
+- Prompter em `http://localhost:8020`
 - Classifier em `http://localhost:8010`
 
 O serviço `classifier` agora aceita override por imagem:
@@ -80,12 +84,16 @@ Pré-requisitos no host:
 - driver NVIDIA instalado
 - `nvidia-container-toolkit` configurado no Docker
 
-Para usar o classifier do compose com a API rodando localmente:
+Para usar o prompter e o classifier do compose com a API rodando localmente:
 
 ```bash
+export PROMPTER_BASE_URL=http://localhost:8020
+export PROMPTER_API_KEY=sentir-mais-local-prompter-key
 export CLASSIFIER_BASE_URL=http://localhost:8010
 export CLASSIFIER_API_KEY=sentir-mais-local-classifier-key
 ```
+
+Se `PROMPTER_BASE_URL` estiver configurada, o backend usa `sentir-mais-prompter` para gerar as respostas conversacionais.
 
 Se `CLASSIFIER_BASE_URL` estiver configurada, o backend classifica cada mensagem do usuario e persiste o resultado em `message_analyses`.
 

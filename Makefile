@@ -7,6 +7,7 @@ endif
 SVC_DB := mongodb
 SVC_DB_UI := mongo-express
 SVC_CLASSIFIER := classifier
+SVC_PROMPTER := prompter
 LOGS_CMD := $(DOCKER_COMPOSE) logs --follow --tail=20
 GOCACHE ?= /tmp/sentir-mais-go-cache
 GO_ENV := env GOCACHE=$(GOCACHE)
@@ -35,16 +36,16 @@ run-api: ## Start the API locally
 	@$(GO_ENV) go run ./cmd/sentir-mais-api
 
 .PHONY: run-db
-run-db: ## Start MongoDB, Mongo Express, and the classifier
-	@$(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER)
+run-db: ## Start MongoDB, Mongo Express, the classifier, and the prompter
+	@$(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
 
 .PHONY: run-db-gpu
 run-db-gpu: ## Start local dependencies with the published NVIDIA GPU classifier image
-	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest-gpu $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER)
+	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest-gpu $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
 
 .PHONY: run-db-cpu
 run-db-cpu: ## Start local dependencies with the published CPU classifier image
-	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER)
+	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
 
 stop: stop-all ## Stop local dependencies
 
@@ -64,6 +65,10 @@ stop-db-ui: ## Stop Mongo Express
 stop-classifier: ## Stop the classifier service
 	@$(DOCKER_COMPOSE) stop $(SVC_CLASSIFIER)
 
+.PHONY: stop-prompter
+stop-prompter: ## Stop the prompter service
+	@$(DOCKER_COMPOSE) stop $(SVC_PROMPTER)
+
 .PHONY: logs-db
 logs-db: ## Show MongoDB logs
 	@$(LOGS_CMD) $(SVC_DB)
@@ -75,6 +80,10 @@ logs-db-ui: ## Show Mongo Express logs
 .PHONY: logs-classifier
 logs-classifier: ## Show classifier logs
 	@$(LOGS_CMD) $(SVC_CLASSIFIER)
+
+.PHONY: logs-prompter
+logs-prompter: ## Show prompter logs
+	@$(LOGS_CMD) $(SVC_PROMPTER)
 
 .PHONY: logs-all
 logs-all: ## Show logs for all docker-compose services

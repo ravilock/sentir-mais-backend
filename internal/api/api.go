@@ -86,10 +86,13 @@ func NewServer(cfg config.Config) (Server, error) {
 	loginService := authservices.NewLoginService(userRepository, sessionRepository, cfg.SessionTTL)
 	authenticateService := authservices.NewAuthenticateService(sessionRepository, userRepository)
 
-	stubClient := llm.NewStubSupportClient()
+	responder := llm.SupportClient(llm.NewStubSupportClient())
+	if cfg.PrompterBaseURL != "" {
+		responder = llm.NewPrompterClient(cfg.PrompterBaseURL, cfg.PrompterAPIKey, cfg.PrompterTimeout)
+	}
 	classifierClient := classifier.NewClient(cfg.ClassifierBaseURL, cfg.ClassifierAPIKey, cfg.ClassifierTimeout)
-	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, stubClient).WithAnalysis(classifierClient, messageAnalysisRepository)
-	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, stubClient).WithAnalysis(classifierClient, messageAnalysisRepository)
+	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository)
+	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	dashboardService := dashboardservices.NewGetWeekService()
 

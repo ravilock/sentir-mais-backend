@@ -34,7 +34,11 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 
 	var request apirequests.CreateChatRequest
 	if err := decodeJSON(r, &request); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondDecodeError(w, err)
+		return
+	}
+	if err := request.Validate(); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 
@@ -64,7 +68,11 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	var request apirequests.SendMessageRequest
 	if err := decodeJSON(r, &request); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondDecodeError(w, err)
+		return
+	}
+	if err := request.Validate(); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 

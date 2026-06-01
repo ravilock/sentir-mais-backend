@@ -14,6 +14,7 @@ import (
 	"github.com/ravilock/sentir-mais-backend/internal/auth"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
 	httpmiddleware "github.com/ravilock/sentir-mais-backend/internal/http/middleware"
+	"github.com/ravilock/sentir-mais-backend/internal/validations"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -28,6 +29,7 @@ func (s handlerAuthStub) Authenticate(_ context.Context, _ string) (domain.User,
 }
 
 func TestAuthHandler_Register(t *testing.T) {
+	require.NoError(t, validations.InitValidator())
 	registerer := newMockRegisterer(t)
 	handler := NewAuthHandler(registerer, newMockLoginer(t))
 
@@ -73,9 +75,20 @@ func TestAuthHandler_Register(t *testing.T) {
 		require.Equal(t, http.StatusConflict, rec.Code)
 		require.JSONEq(t, `{"message":"email already exists"}`, rec.Body.String())
 	})
+
+	t.Run("should validate register payload", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewReader([]byte(`{"email":"wrong","password":"short"}`)))
+		rec := httptest.NewRecorder()
+
+		handler.Register(rec, req)
+
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+		require.JSONEq(t, `{"message":"field 'Email' must be a valid email, field 'Password' minimum length is 8"}`, rec.Body.String())
+	})
 }
 
 func TestAuthHandler_Login(t *testing.T) {
+	require.NoError(t, validations.InitValidator())
 	loginer := newMockLoginer(t)
 	handler := NewAuthHandler(newMockRegisterer(t), loginer)
 
@@ -94,6 +107,18 @@ func TestAuthHandler_Login(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{"accessToken":"tok_456","user":{"id":"usr_123","email":"user@test.com","createdAt":"0001-01-01T00:00:00Z","updatedAt":"0001-01-01T00:00:00Z"}}`, rec.Body.String())
+}
+
+func TestAuthHandler_LoginValidation(t *testing.T) {
+	require.NoError(t, validations.InitValidator())
+	handler := NewAuthHandler(newMockRegisterer(t), newMockLoginer(t))
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader([]byte(`{"email":"   ","password":"123"}`)))
+	rec := httptest.NewRecorder()
+
+	handler.Login(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	require.JSONEq(t, `{"message":"field 'Email' is required, field 'Password' minimum length is 8"}`, rec.Body.String())
 }
 
 func TestAuthHandler_Me(t *testing.T) {

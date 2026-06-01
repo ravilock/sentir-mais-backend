@@ -13,6 +13,7 @@ import (
 	"github.com/ravilock/sentir-mais-backend/internal/chat"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
 	httpmiddleware "github.com/ravilock/sentir-mais-backend/internal/http/middleware"
+	"github.com/ravilock/sentir-mais-backend/internal/validations"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -26,6 +27,7 @@ func (s chatHandlerAuthStub) Authenticate(_ context.Context, _ string) (domain.U
 }
 
 func TestChatHandler_CreateChat(t *testing.T) {
+	require.NoError(t, validations.InitValidator())
 	creator := newMockChatCreator(t)
 	handler := NewChatHandler(creator, newMockMessageSender(t), newMockMessagesLister(t))
 
@@ -49,7 +51,22 @@ func TestChatHandler_CreateChat(t *testing.T) {
 	require.JSONEq(t, `{"chatId":"cht_123","response":{"id":"msg_123","content":"assistant reply","sender":1}}`, rec.Body.String())
 }
 
+func TestChatHandler_CreateChatValidation(t *testing.T) {
+	require.NoError(t, validations.InitValidator())
+	handler := NewChatHandler(newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
+	req := httptest.NewRequest(http.MethodPost, "/chats", bytes.NewReader([]byte(`{"initialMessage":"   "}`)))
+	req.Header.Set("Authorization", "Bearer tok_123")
+	rec := httptest.NewRecorder()
+
+	protected := httpmiddleware.RequireAuth(chatHandlerAuthStub{user: domain.User{ID: "usr_123"}})(http.HandlerFunc(handler.CreateChat))
+	protected.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	require.JSONEq(t, `{"message":"field 'InitialMessage' is required"}`, rec.Body.String())
+}
+
 func TestChatHandler_SendMessage(t *testing.T) {
+	require.NoError(t, validations.InitValidator())
 	sender := newMockMessageSender(t)
 	handler := NewChatHandler(newMockChatCreator(t), sender, newMockMessagesLister(t))
 
@@ -68,6 +85,21 @@ func TestChatHandler_SendMessage(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{"id":"msg_456","content":"reply","sender":1}`, rec.Body.String())
+}
+
+func TestChatHandler_SendMessageValidation(t *testing.T) {
+	require.NoError(t, validations.InitValidator())
+	handler := NewChatHandler(newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
+	req := httptest.NewRequest(http.MethodPost, "/chats/cht_123/messages", bytes.NewReader([]byte(`{"message":""}`)))
+	req.SetPathValue("chatId", "cht_123")
+	req.Header.Set("Authorization", "Bearer tok_123")
+	rec := httptest.NewRecorder()
+
+	protected := httpmiddleware.RequireAuth(chatHandlerAuthStub{user: domain.User{ID: "usr_123"}})(http.HandlerFunc(handler.SendMessage))
+	protected.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	require.JSONEq(t, `{"message":"field 'Message' is required"}`, rec.Body.String())
 }
 
 func TestChatHandler_ListMessages(t *testing.T) {

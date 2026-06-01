@@ -18,6 +18,7 @@ import (
 	httpmiddleware "github.com/ravilock/sentir-mais-backend/internal/http/middleware"
 	"github.com/ravilock/sentir-mais-backend/internal/llm"
 	"github.com/ravilock/sentir-mais-backend/internal/storage/mongodb"
+	"github.com/ravilock/sentir-mais-backend/internal/validations"
 )
 
 type Server interface {
@@ -37,6 +38,10 @@ type server struct {
 }
 
 func NewServer(cfg config.Config) (Server, error) {
+	if err := validations.InitValidator(); err != nil {
+		return nil, err
+	}
+
 	storeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

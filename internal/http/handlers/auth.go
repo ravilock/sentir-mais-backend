@@ -26,7 +26,11 @@ func NewAuthHandler(registerer registerer, loginer loginer) *AuthHandler {
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var request apirequests.RegisterRequest
 	if err := decodeJSON(r, &request); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondDecodeError(w, err)
+		return
+	}
+	if err := request.Validate(); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 
@@ -52,7 +56,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var request apirequests.LoginRequest
 	if err := decodeJSON(r, &request); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondDecodeError(w, err)
+		return
+	}
+	if err := request.Validate(); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 

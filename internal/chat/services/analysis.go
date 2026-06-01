@@ -46,7 +46,7 @@ func persistMessageAnalysis(
 		analysis.ContextGaps = extractedEvent.ContextGaps
 	}
 
-	if classifierClient != nil {
+	if classifierClient != nil && shouldProceedToClassifier(analysis, extractor != nil) {
 		result, err := classifierClient.Classify(ctx, message.Content)
 		if err != nil {
 			return err
@@ -70,4 +70,12 @@ func persistMessageAnalysis(
 
 func boolPointer(value bool) *bool {
 	return &value
+}
+
+func shouldProceedToClassifier(analysis domain.MessageAnalysis, hasExtractor bool) bool {
+	if !hasExtractor {
+		return true
+	}
+
+	return determineNextAnalysisStep(analysis) == analysisNextStepProceedToNextStage
 }

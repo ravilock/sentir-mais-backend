@@ -78,6 +78,9 @@ stop-classifier: ## Stop the classifier service
 stop-prompter: ## Stop the prompter service
 	@$(DOCKER_COMPOSE) stop $(SVC_PROMPTER)
 
+logs-api: ## Show API logs
+	@$(LOGS_CMD) $(SVC_BACKEND)
+
 .PHONY: logs-db
 logs-db: ## Show MongoDB logs
 	@$(LOGS_CMD) $(SVC_DB)

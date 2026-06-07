@@ -190,8 +190,8 @@ func (c *PrompterClient) ExtractEvent(ctx context.Context, history []domain.Mess
 		return domain.ExtractedEvent{}, err
 	}
 
-	var extracted extractedEventPayload
-	if err := json.Unmarshal([]byte(payload.OutputText), &extracted); err != nil {
+	extracted, err := decodeExtractedEventPayload(payload.OutputText)
+	if err != nil {
 		return domain.ExtractedEvent{}, fmt.Errorf("decode extracted event payload: %w", err)
 	}
 
@@ -286,22 +286,73 @@ func mapMessageRole(sender domain.Sender) string {
 }
 
 type extractedEventPayload struct {
-	EnoughContext                    bool     `json:"enough_context"`
-	ContextGaps                      []string `json:"context_gaps"`
-	EventSummary                     string   `json:"event_summary"`
-	WhatHappened                     string   `json:"what_happened"`
-	FeltEmotionsDescribedByUser      []string `json:"felt_emotions_described_by_user"`
-	UserReaction                     string   `json:"user_reaction"`
-	ExpectedOutcomeOrSelfExpectation string   `json:"expected_outcome_or_self_expectation"`
-	PeopleInvolved                   []string `json:"people_involved"`
-	Setting                          string   `json:"setting"`
-	TimeReference                    string   `json:"time_reference"`
-	RiskFlags                        struct {
-		SelfHarm         bool `json:"self_harm"`
-		SuicidalIdeation bool `json:"suicidal_ideation"`
-		ImmediateDanger  bool `json:"immediate_danger"`
-	} `json:"risk_flags"`
-	ConfidenceNotes string `json:"confidence_notes"`
+	EnoughContext                    bool               `json:"enough_context"`
+	ContextGaps                      []string           `json:"context_gaps"`
+	EventSummary                     string             `json:"event_summary"`
+	WhatHappened                     string             `json:"what_happened"`
+	FeltEmotionsDescribedByUser      []string           `json:"felt_emotions_described_by_user"`
+	UserReaction                     string             `json:"user_reaction"`
+	ExpectedOutcomeOrSelfExpectation string             `json:"expected_outcome_or_self_expectation"`
+	PeopleInvolved                   []string           `json:"people_involved"`
+	Setting                          string             `json:"setting"`
+	TimeReference                    string             `json:"time_reference"`
+	RiskFlags                        extractedRiskFlags `json:"risk_flags"`
+	ConfidenceNotes                  string             `json:"confidence_notes"`
+}
+
+type extractedRiskFlags struct {
+	SelfHarm         bool `json:"self_harm"`
+	SuicidalIdeation bool `json:"suicidal_ideation"`
+	ImmediateDanger  bool `json:"immediate_danger"`
+}
+
+func decodeExtractedEventPayload(raw string) (extractedEventPayload, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+
+	var payload extractedEventPayload
+	if err := decoder.Decode(&payload); err != nil {
+		return extractedEventPayload{}, err
+	}
+
+	if decoder.More() {
+		return extractedEventPayload{}, fmt.Errorf("unexpected trailing JSON content")
+	}
+
+	if err := payload.validate(); err != nil {
+		return extractedEventPayload{}, err
+	}
+
+	return payload.normalize(), nil
+}
+
+func (payload extractedEventPayload) validate() error {
+	for _, gap := range payload.ContextGaps {
+		switch domain.ContextGap(strings.TrimSpace(gap)) {
+		case domain.ContextGapWhatHappened,
+			domain.ContextGapFeltEmotionsDescribedByUser,
+			domain.ContextGapUserReaction,
+			domain.ContextGapExpectedOutcomeOrExpectation:
+		default:
+			return fmt.Errorf("invalid context_gaps value %q", gap)
+		}
+	}
+
+	return nil
+}
+
+func (payload extractedEventPayload) normalize() extractedEventPayload {
+	payload.EventSummary = strings.TrimSpace(payload.EventSummary)
+	payload.WhatHappened = strings.TrimSpace(payload.WhatHappened)
+	payload.UserReaction = strings.TrimSpace(payload.UserReaction)
+	payload.ExpectedOutcomeOrSelfExpectation = strings.TrimSpace(payload.ExpectedOutcomeOrSelfExpectation)
+	payload.Setting = strings.TrimSpace(payload.Setting)
+	payload.TimeReference = strings.TrimSpace(payload.TimeReference)
+	payload.ConfidenceNotes = strings.TrimSpace(payload.ConfidenceNotes)
+	payload.ContextGaps = compactStrings(payload.ContextGaps)
+	payload.FeltEmotionsDescribedByUser = compactStrings(payload.FeltEmotionsDescribedByUser)
+	payload.PeopleInvolved = compactStrings(payload.PeopleInvolved)
+	return payload
 }
 
 func (payload extractedEventPayload) toDomain() domain.ExtractedEvent {
@@ -336,4 +387,18 @@ func toContextGaps(values []string) []domain.ContextGap {
 	}
 
 	return gaps
+}
+
+func compactStrings(values []string) []string {
+	compacted := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+
+		compacted = append(compacted, trimmed)
+	}
+
+	return compacted
 }

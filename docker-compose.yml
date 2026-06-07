@@ -1,4 +1,19 @@
 services:
+  backend:
+    container_name: sentir-mais-backend
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      HTTP_ADDRESS: ":8001"
+      MONGO_URI: "mongodb://mongodb:27017"
+      CLASSIFIER_BASE_URL: "http://classifier:8081"
+      CLASSIFIER_API_KEY: ${CLASSIFIER_API_KEY:-sentir-mais-local-classifier-key}
+      PROMPTER_BASE_URL: "http://prompter:8020"
+      PROMPTER_API_KEY: ${PROMPTER_API_KEY:-sentir-mais-local-prompter-key}
+
   mongodb:
     image: mongo:7.0
     container_name: sentir-mais-mongodb

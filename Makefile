@@ -4,6 +4,7 @@ else
 DOCKER_COMPOSE=docker-compose
 endif
 
+SVC_BACKEND := backend
 SVC_DB := mongodb
 SVC_DB_UI := mongo-express
 SVC_CLASSIFIER := classifier
@@ -28,16 +29,24 @@ setup: install-golangci-lint ## Install development tools
 run: run-all ## Run all local dependencies
 
 .PHONY: run-all
-run-all: run-db ## Start local dependencies and print API run command
-	@echo 'Run the API locally with: make run-api'
+run-all: run-db run-prompter run-classifier run-api ## Start local dependencies and print API run command
+	@echo 'Running all applications'
 
 .PHONY: run-api
-run-api: ## Start the API locally
-	@$(GO_ENV) go run ./cmd/sentir-mais-api
+run-api: ## Start the API
+	@$(DOCKER_COMPOSE) up -d $(SVC_BACKEND)
 
 .PHONY: run-db
-run-db: ## Start MongoDB, Mongo Express, the classifier, and the prompter
+run-db: ## Start MongoDB, Mongo Express
 	@$(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
+
+.PHONY: run-classifier
+run-classifier: ## Start the classifier service
+	@$(DOCKER_COMPOSE) up -d $(SVC_CLASSIFIER) $(SVC_PROMPTER)
+
+.PHONY: run-prompter
+run-prompter: ## Start the prompter service
+	@$(DOCKER_COMPOSE) up -d $(SVC_PROMPTER)
 
 .PHONY: run-db-gpu
 run-db-gpu: ## Start local dependencies with the published NVIDIA GPU classifier image

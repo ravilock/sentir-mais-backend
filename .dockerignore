@@ -1,0 +1,9 @@
+.gitignore
+.git/
+.github/
+docker-compose.yml
+openapi.yml
+README.md
+Makefile
+.tool-versions
+.mockery.yml

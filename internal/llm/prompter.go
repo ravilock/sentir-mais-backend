@@ -229,9 +229,9 @@ func (c *PrompterClient) ExtractEvent(ctx context.Context, history []domain.Mess
 		return domain.ExtractedEvent{}, err
 	}
 
+	c.logger.Debug("Prompter extraction response received", "outputText", payload.OutputText)
 	extracted, err := decodeExtractedEventPayload(payload.OutputText)
 	if err != nil {
-		c.logger.Debug("Prompter extraction response received", "outputText", payload.OutputText)
 		return domain.ExtractedEvent{}, fmt.Errorf("decode extracted event payload: %w", err)
 	}
 

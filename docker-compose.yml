@@ -10,7 +10,7 @@ services:
     environment:
       HTTP_ADDRESS: ":8001"
       MONGO_URI: "mongodb://mongodb:27017"
-      CLASSIFIER_BASE_URL: "http://classifier:8081"
+      CLASSIFIER_BASE_URL: "http://classifier:8010"
       CLASSIFIER_API_KEY: ${CLASSIFIER_API_KEY:-sentir-mais-local-classifier-key}
       PROMPTER_BASE_URL: "http://prompter:8020"
       PROMPTER_API_KEY: ${PROMPTER_API_KEY:-sentir-mais-local-prompter-key}
@@ -37,7 +37,7 @@ services:
       - "8081:8081"
 
   classifier:
-    image: ${CLASSIFIER_IMAGE:-ghcr.io/ravilock/sentir-mais-classifier:latest-gpu}
+    image: ${CLASSIFIER_IMAGE:-ghcr.io/ravilock/sentir-mais-classifier:latest}
     container_name: sentir-mais-classifier
     restart: unless-stopped
     # gpus: all
@@ -60,14 +60,17 @@ services:
     image: ${PROMPTER_IMAGE:-ghcr.io/ravilock/sentir-mais-prompter:latest}
     container_name: sentir-mais-prompter
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       HOST: 0.0.0.0
       PORT: 8020
       API_KEY: ${PROMPTER_API_KEY:-sentir-mais-local-prompter-key}
+      LOCAL_LLM: ${PROMPTER_LOCAL_LLM:-false}
       LLM_PROVIDER: ${PROMPTER_LLM_PROVIDER:-openrouter}
-      LLM_BASE_URL: ${PROMPTER_LLM_BASE_URL:-https://openrouter.ai/api/v1}
+      LLM_BASE_URL: ${PROMPTER_LLM_BASE_URL:-http://host.docker.internal:11434}
       LLM_API_KEY: ${PROMPTER_LLM_API_KEY:-}
-      DEFAULT_MODEL: ${PROMPTER_DEFAULT_MODEL:-google/gemini-2.5-flash-lite}
+      DEFAULT_MODEL: ${PROMPTER_DEFAULT_MODEL:-qwen2.5:7b}
       REQUEST_TIMEOUT_SECONDS: ${PROMPTER_TIMEOUT_SECONDS:-30}
       APP_URL: ${PROMPTER_APP_URL:-http://localhost:8001}
       APP_TITLE: ${PROMPTER_APP_TITLE:-sentir-mais-prompter}

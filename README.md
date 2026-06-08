@@ -27,18 +27,6 @@ Suba as dependencias locais:
 docker compose up -d
 ```
 
-Para subir o classifier com GPU NVIDIA:
-
-```bash
-docker compose up -d classifier
-```
-
-Ou:
-
-```bash
-make run-db-gpu
-```
-
 Depois rode a API:
 
 ```bash
@@ -68,21 +56,65 @@ O compose local sobe:
 
 O serviço `classifier` agora aceita override por imagem:
 
-- default: `ghcr.io/ravilock/sentir-mais-classifier:latest-gpu`
-- CPU: `ghcr.io/ravilock/sentir-mais-classifier:latest`
+- default: `ghcr.io/ravilock/sentir-mais-classifier:latest`
 
-Para trocar a variante, exporte `CLASSIFIER_IMAGE` antes de subir o compose.
+Para trocar a imagem, exporte `CLASSIFIER_IMAGE` antes de subir o compose.
 
-Exemplo para forçar CPU:
+Exemplo:
 
 ```bash
 CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest docker compose up -d classifier
 ```
 
-Pré-requisitos no host:
+Para usar o prompter com Ollama rodando no host:
 
-- driver NVIDIA instalado
-- `nvidia-container-toolkit` configurado no Docker
+```bash
+export PROMPTER_LOCAL_LLM=true
+export PROMPTER_DEFAULT_MODEL=qwen2.5:7b
+docker compose up -d prompter
+```
+
+O compose já expõe `host.docker.internal` para o container do prompter e aponta `LLM_BASE_URL` para `http://host.docker.internal:11434` por default, então o único pré-requisito é ter o daemon do Ollama rodando no host.
+
+Exemplo para preparar o host:
+
+```bash
+make run-ollama-host
+```
+
+Ou, sem `make`:
+
+```bash
+./scripts/run-ollama-host.sh
+```
+
+Para descarregar o modelo depois:
+
+```bash
+make stop-ollama-host
+```
+
+`make run-ollama-host` nao sobe um novo `ollama serve`. Ele:
+
+- garante que o modelo exista com `ollama pull`
+- faz preload do modelo no daemon ja rodando via `ollama run "<modelo>" ""`
+
+`make stop-ollama-host` descarrega o modelo com `ollama stop <modelo>`.
+
+Se quiser usar outro endpoint ou outro modelo local, sobrescreva:
+
+```bash
+export PROMPTER_LOCAL_LLM=true
+export PROMPTER_LLM_BASE_URL=http://host.docker.internal:11434
+export PROMPTER_DEFAULT_MODEL=llama3.1:8b
+docker compose up -d prompter
+```
+
+O script aceita overrides por ambiente:
+
+```bash
+OLLAMA_MODEL=llama3.1:8b OLLAMA_PULL_MODEL=true ./scripts/run-ollama-host.sh
+```
 
 Para usar o prompter e o classifier do compose com a API rodando localmente:
 

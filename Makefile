@@ -48,6 +48,14 @@ run-classifier: ## Start the classifier service
 run-prompter: ## Start the prompter service
 	@$(DOCKER_COMPOSE) up -d $(SVC_PROMPTER)
 
+.PHONY: run-ollama-host
+run-ollama-host: ## Pull and preload the local Ollama model on the running host daemon
+	@./scripts/run-ollama-host.sh
+
+.PHONY: stop-ollama-host
+stop-ollama-host: ## Unload the local Ollama model from the running host daemon
+	@./scripts/stop-ollama-host.sh
+
 .PHONY: run-db-gpu
 run-db-gpu: ## Start local dependencies with the published NVIDIA GPU classifier image
 	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest-gpu $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)

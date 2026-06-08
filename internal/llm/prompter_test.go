@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -16,7 +17,7 @@ func TestPrompterClientGenerateReplySendsExpectedRequest(t *testing.T) {
 	t.Parallel()
 
 	var capturedBody string
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		require.Equal(t, http.MethodPost, r.Method)
 		require.Equal(t, "/generate", r.URL.Path)
@@ -56,7 +57,7 @@ func TestPrompterClientGenerateReplySendsExpectedRequest(t *testing.T) {
 func TestPrompterClientGenerateReplyReturnsErrorOnNon2xx(t *testing.T) {
 	t.Parallel()
 
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusBadGateway,
@@ -76,7 +77,7 @@ func TestPrompterClientExtractEventParsesStructuredOutput(t *testing.T) {
 	t.Parallel()
 
 	var capturedBody string
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -109,7 +110,7 @@ func TestPrompterClientExtractEventParsesStructuredOutput(t *testing.T) {
 func TestPrompterClientExtractEventReturnsErrorOnInvalidJSONPayload(t *testing.T) {
 	t.Parallel()
 
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -134,7 +135,7 @@ func TestPrompterClientExtractEventReturnsErrorOnInvalidJSONPayload(t *testing.T
 func TestPrompterClientExtractEventRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -158,7 +159,7 @@ func TestPrompterClientExtractEventRejectsUnknownFields(t *testing.T) {
 func TestPrompterClientExtractEventRejectsInvalidContextGap(t *testing.T) {
 	t.Parallel()
 
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -181,7 +182,7 @@ func TestPrompterClientExtractEventRejectsInvalidContextGap(t *testing.T) {
 func TestPrompterClientExtractEventRejectsInvalidFieldTypes(t *testing.T) {
 	t.Parallel()
 
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -204,7 +205,7 @@ func TestPrompterClientExtractEventRejectsInvalidFieldTypes(t *testing.T) {
 func TestPrompterClientExtractEventAcceptsMissingRiskFlagsAsZeroValues(t *testing.T) {
 	t.Parallel()
 
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -229,7 +230,7 @@ func TestPrompterClientExtractEventAcceptsMissingRiskFlagsAsZeroValues(t *testin
 func TestPrompterClientExtractEventNormalizesNullableAndBlankFields(t *testing.T) {
 	t.Parallel()
 
-	client := NewPrompterClient("http://prompter.test", "test-key", time.Second)
+	client := newTestPrompterClient()
 	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -263,4 +264,13 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return fn(r)
+}
+
+func newTestPrompterClient() *PrompterClient {
+	return NewPrompterClient(
+		"http://prompter.test",
+		"test-key",
+		time.Second,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
 }

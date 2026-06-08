@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -71,12 +72,49 @@ You must also assess whether these four reflection points are sufficiently estab
 
 Return valid JSON only, matching the required schema exactly.
 Do not include markdown.
-Do not include explanatory prose.`
+Do not include explanatory prose.
+
+Return exactly one top-level JSON object with these fields and no others:
+{
+  "enough_context": true,
+  "context_gaps": [],
+  "event_summary": "string or null",
+  "what_happened": "string or null",
+  "felt_emotions_described_by_user": ["string"],
+  "user_reaction": "string or null",
+  "expected_outcome_or_self_expectation": "string or null",
+  "people_involved": ["string"],
+  "setting": "string or null",
+  "time_reference": "string or null",
+  "risk_flags": {
+    "self_harm": false,
+    "suicidal_ideation": false,
+    "immediate_danger": false
+  },
+  "confidence_notes": "string or null"
+}
+
+Rules:
+- Do not wrap the result in an "event" field or any other wrapper object.
+- Use these exact top-level field names.
+- Use these exact risk_flags field names.
+- "context_gaps" must contain only these enum values:
+  - "what_happened"
+  - "felt_emotions_described_by_user"
+  - "user_reaction"
+  - "expected_outcome_or_self_expectation"
+- If enough_context is true, context_gaps must be [].
+- If enough_context is false, context_gaps must list the missing reflection fields using only the allowed enum values.
+- "felt_emotions_described_by_user" must always be an array of strings, never null.
+- "people_involved" must always be an array of strings, never null.
+- Use null only for nullable string fields when the conversation does not establish them.
+- Do not output any fields that are not listed above.`
 
 type PrompterClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	logger     *slog.Logger
 }
 
 type promptMessage struct {
@@ -103,13 +141,14 @@ type generateResponseFormat struct {
 	Type string `json:"type"`
 }
 
-func NewPrompterClient(baseURL, apiKey string, timeout time.Duration) *PrompterClient {
+func NewPrompterClient(baseURL, apiKey string, timeout time.Duration, logger *slog.Logger) *PrompterClient {
 	return &PrompterClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
+		logger: logger.With("component", "PrompterClient"),
 	}
 }
 
@@ -164,6 +203,7 @@ func (c *PrompterClient) GenerateReply(ctx context.Context, history []domain.Mes
 		return "", fmt.Errorf("prompter response did not include output_text")
 	}
 
+	c.logger.Debug("Prompter response received", "payload", payload)
 	return payload.OutputText, nil
 }
 
@@ -192,6 +232,7 @@ func (c *PrompterClient) ExtractEvent(ctx context.Context, history []domain.Mess
 
 	extracted, err := decodeExtractedEventPayload(payload.OutputText)
 	if err != nil {
+		c.logger.Debug("Prompter extraction response received", "outputText", payload.OutputText)
 		return domain.ExtractedEvent{}, fmt.Errorf("decode extracted event payload: %w", err)
 	}
 

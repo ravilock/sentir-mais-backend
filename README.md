@@ -53,6 +53,17 @@ O compose local sobe:
 - Mongo Express em `http://localhost:8081`
 - Prompter em `http://localhost:8020`
 - Classifier em `http://localhost:8010`
+- Frontend em `http://localhost:3000`
+
+O serviço `frontend` do compose do backend agora faz build local do projeto `../sentir-mais` e injeta `API_URL` em tempo de build do Vite. O default é:
+
+- `FRONTEND_API_URL=http://localhost:8001/api/v1`
+
+Se quiser apontar o frontend para outro backend antes do build:
+
+```bash
+FRONTEND_API_URL=http://localhost:8001/api/v1 docker compose up -d --build frontend
+```
 
 O serviço `classifier` agora aceita override por imagem:
 

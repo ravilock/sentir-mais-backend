@@ -41,6 +41,7 @@ type server struct {
 }
 
 func NewServer(cfg config.Config) (Server, error) {
+	logger := applog.New(cfg, nil)
 	if err := validations.InitValidator(); err != nil {
 		return nil, err
 	}
@@ -90,7 +91,7 @@ func NewServer(cfg config.Config) (Server, error) {
 	responder := llm.SupportClient(llm.NewStubSupportClient())
 	var extractor llm.Extractor
 	if cfg.PrompterBaseURL != "" {
-		prompterClient := llm.NewPrompterClient(cfg.PrompterBaseURL, cfg.PrompterAPIKey, cfg.PrompterTimeout)
+		prompterClient := llm.NewPrompterClient(cfg.PrompterBaseURL, cfg.PrompterAPIKey, cfg.PrompterTimeout, logger)
 		responder = prompterClient
 		extractor = prompterClient
 	}
@@ -100,7 +101,6 @@ func NewServer(cfg config.Config) (Server, error) {
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	dashboardService := dashboardservices.NewGetWeekService()
 
-	logger := applog.New(cfg, nil)
 	srv := &server{
 		logger:           logger,
 		close:            func() error { return connection.Close(context.Background()) },

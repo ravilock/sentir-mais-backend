@@ -13,6 +13,7 @@ services:
       - prompter
       - mongo-express
     environment:
+      LLM_API_KEY: ${PROMPTER_LLM_API_KEY:-local-api-key}
       HTTP_ADDRESS: ":8001"
       MONGO_URI: "mongodb://mongodb:27017"
       CLASSIFIER_BASE_URL: "http://classifier:8010"
@@ -71,10 +72,10 @@ services:
       HOST: 0.0.0.0
       PORT: 8020
       API_KEY: ${PROMPTER_API_KEY:-sentir-mais-local-prompter-key}
-      LOCAL_LLM: ${PROMPTER_LOCAL_LLM:-false}
+      LOCAL_LLM: ${PROMPTER_LOCAL_LLM:-true}
       LLM_PROVIDER: ${PROMPTER_LLM_PROVIDER:-openrouter}
       LLM_BASE_URL: ${PROMPTER_LLM_BASE_URL:-http://host.docker.internal:11434}
-      LLM_API_KEY: ${PROMPTER_LLM_API_KEY:-}
+      LLM_API_KEY: ${PROMPTER_LLM_API_KEY:-local-api-key}
       DEFAULT_MODEL: ${PROMPTER_DEFAULT_MODEL:-qwen2.5:7b}
       REQUEST_TIMEOUT_SECONDS: ${PROMPTER_TIMEOUT_SECONDS:-30}
       APP_URL: ${PROMPTER_APP_URL:-http://localhost:8001}
@@ -82,6 +83,19 @@ services:
       ALLOW_MODEL_OVERRIDE: ${PROMPTER_ALLOW_MODEL_OVERRIDE:-true}
     ports:
       - "8020:8020"
+
+  frontend:
+    build:
+      context: ../sentir-mais
+      dockerfile: ./Dockerfile
+      args:
+        API_URL: ${FRONTEND_API_URL:-http://localhost:8001/api/v1}
+    container_name: sentir-mais-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
 
 volumes:
   mongodb_data:

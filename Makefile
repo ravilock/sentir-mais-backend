@@ -5,10 +5,12 @@ DOCKER_COMPOSE=docker-compose
 endif
 
 SVC_BACKEND := backend
+SVC_FRONTEND := frontend
 SVC_DB := mongodb
 SVC_DB_UI := mongo-express
 SVC_CLASSIFIER := classifier
 SVC_PROMPTER := prompter
+FRONTEND_API_URL ?= http://localhost:8001/api/v1
 LOGS_CMD := $(DOCKER_COMPOSE) logs --follow --tail=20
 GOCACHE ?= /tmp/sentir-mais-go-cache
 GO_ENV := env GOCACHE=$(GOCACHE)
@@ -29,12 +31,20 @@ setup: install-golangci-lint ## Install development tools
 run: run-all ## Run all local dependencies
 
 .PHONY: run-all
-run-all: run-db run-prompter run-classifier run-api ## Start local dependencies and print API run command
+run-all: run-db run-prompter run-classifier run-api run-frontend ## Start local dependencies and print API run command
 	@echo 'Running all applications'
 
 .PHONY: run-api
 run-api: ## Start the API
 	@$(DOCKER_COMPOSE) up -d $(SVC_BACKEND)
+
+.PHONY: run-frontend
+run-frontend: ## Build and start the frontend using FRONTEND_API_URL
+	@FRONTEND_API_URL=$(FRONTEND_API_URL) $(DOCKER_COMPOSE) up -d --build $(SVC_FRONTEND)
+
+.PHONY: rebuild-frontend
+rebuild-frontend: ## Rebuild the frontend image using FRONTEND_API_URL
+	@FRONTEND_API_URL=$(FRONTEND_API_URL) $(DOCKER_COMPOSE) build $(SVC_FRONTEND)
 
 .PHONY: run-db
 run-db: ## Start MongoDB, Mongo Express
@@ -86,8 +96,12 @@ stop-classifier: ## Stop the classifier service
 stop-prompter: ## Stop the prompter service
 	@$(DOCKER_COMPOSE) stop $(SVC_PROMPTER)
 
+.PHONY: stop-frontend
+stop-frontend: ## Stop the frontend service
+	@$(DOCKER_COMPOSE) stop $(SVC_FRONTEND)
+
 logs-api: ## Show API logs
-	@$(LOGS_CMD) $(SVC_BACKEND)
+	@$(LOGS_CMD) $(SVC_BACKEND) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
 
 .PHONY: logs-db
 logs-db: ## Show MongoDB logs
@@ -128,6 +142,10 @@ test-integration-verbose: ## Run integration tests with verbose output
 .PHONY: bash
 bash: ## Open a shell in the MongoDB container
 	@$(DOCKER_COMPOSE) exec $(SVC_DB) sh
+
+.PHONY: bash-frontend
+bash-frontend: ## Open a shell in the frontend container
+	@$(DOCKER_COMPOSE) exec $(SVC_FRONTEND) sh
 
 .PHONY: lint-check
 lint-check: ## Run linter checks

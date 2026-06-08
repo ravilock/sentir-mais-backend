@@ -13,6 +13,7 @@ import (
 func TestSummaryWriterUpdateForAnalysis(t *testing.T) {
 	t.Run("should upsert daily and weekly summaries from matching analyses", func(t *testing.T) {
 		now := time.Date(2026, time.June, 3, 15, 0, 0, 0, time.UTC)
+		generatedAt := time.Date(2026, time.June, 8, 3, 51, 37, 625000000, time.UTC)
 		lister := &stubAnalysisRangeLister{
 			results: map[string][]domain.MessageAnalysis{
 				rangeKey(startOfDay(now), startOfDay(now).AddDate(0, 0, 1)): {
@@ -48,6 +49,7 @@ func TestSummaryWriterUpdateForAnalysis(t *testing.T) {
 		daily := &stubDailySummaryUpserter{}
 		weekly := &stubWeeklySummaryUpserter{}
 		writer := NewSummaryWriter(lister, daily, weekly)
+		writer.now = func() time.Time { return generatedAt }
 
 		err := writer.UpdateForAnalysis(context.Background(), domain.MessageAnalysis{
 			UserID:    "usr_123",
@@ -60,6 +62,7 @@ func TestSummaryWriterUpdateForAnalysis(t *testing.T) {
 		require.Equal(t, []domain.FeelingScore{{Label: "anxious", Confidence: 0.8}}, daily.summaries[0].DominantFeelings)
 		require.Equal(t, []string{"Argument with manager"}, daily.summaries[0].MainEvents)
 		require.Len(t, daily.summaries[0].TimelinePoints, 2)
+		require.Equal(t, generatedAt, daily.summaries[0].GeneratedAt)
 
 		require.Len(t, weekly.summaries, 1)
 		require.Equal(t, startOfWeek(now), weekly.summaries[0].WeekStart)
@@ -69,6 +72,7 @@ func TestSummaryWriterUpdateForAnalysis(t *testing.T) {
 		}, weekly.summaries[0].DominantFeelings)
 		require.Equal(t, []string{"Bad meeting", "Argument with manager"}, weekly.summaries[0].MainEvents)
 		require.Len(t, weekly.summaries[0].TimelinePoints, 2)
+		require.Equal(t, generatedAt, weekly.summaries[0].GeneratedAt)
 	})
 
 	t.Run("should return day range errors before writing summaries", func(t *testing.T) {

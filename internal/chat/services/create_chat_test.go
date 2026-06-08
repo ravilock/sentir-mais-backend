@@ -24,7 +24,7 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 		service := NewCreateChatService(chats, messages, responder).WithAnalysis(feelingClassifier, analyses)
 		service.clock = clock
 
-		clock.EXPECT().Now().Return(now).Twice()
+		clock.EXPECT().Now().Return(now).Once()
 		responder.EXPECT().
 			GenerateReply(mock.Anything, mock.AnythingOfType("[]domain.Message")).
 			Return("assistant reply", nil).
@@ -87,7 +87,7 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 		service := NewCreateChatService(chats, messages, responder).WithAnalysis(feelingClassifier, analyses).WithExtraction(extractor)
 		service.clock = clock
 
-		clock.EXPECT().Now().Return(now).Twice()
+		clock.EXPECT().Now().Return(now).Once()
 		responder.EXPECT().
 			GenerateReply(mock.Anything, mock.AnythingOfType("[]domain.Message")).
 			Return("assistant reply", nil).

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/ravilock/sentir-mais-backend/internal/classifier"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
@@ -34,7 +35,7 @@ func persistMessageAnalysis(
 		ChatID:     message.ChatID,
 		UserID:     message.UserID,
 		SourceText: message.Content,
-		CreatedAt:  serviceClock.Now(),
+		CreatedAt:  analysisCreatedAt(message, serviceClock),
 	}
 
 	if extractor != nil {
@@ -86,6 +87,14 @@ func persistMessageAnalysis(
 
 func boolPointer(value bool) *bool {
 	return &value
+}
+
+func analysisCreatedAt(message domain.Message, serviceClock clock) time.Time {
+	if !message.CreatedAt.IsZero() {
+		return message.CreatedAt.UTC()
+	}
+
+	return serviceClock.Now()
 }
 
 func shouldProceedToClassifier(analysis domain.MessageAnalysis, hasExtractor bool) bool {

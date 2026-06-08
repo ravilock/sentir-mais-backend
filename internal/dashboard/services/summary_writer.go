@@ -26,6 +26,7 @@ type SummaryWriter struct {
 	analyses analysisRangeLister
 	daily    dailySummaryUpserter
 	weekly   weeklySummaryUpserter
+	now      func() time.Time
 }
 
 func NewSummaryWriter(analyses analysisRangeLister, daily dailySummaryUpserter, weekly weeklySummaryUpserter) *SummaryWriter {
@@ -33,6 +34,7 @@ func NewSummaryWriter(analyses analysisRangeLister, daily dailySummaryUpserter, 
 		analyses: analyses,
 		daily:    daily,
 		weekly:   weekly,
+		now:      func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -48,7 +50,9 @@ func (w *SummaryWriter) UpdateForAnalysis(ctx context.Context, analysis domain.M
 		return err
 	}
 
-	if err := w.daily.Upsert(ctx, buildDailySummary(analysis.UserID, dayStart, analysis.CreatedAt, dayAnalyses)); err != nil {
+	generatedAt := w.now()
+
+	if err := w.daily.Upsert(ctx, buildDailySummary(analysis.UserID, dayStart, generatedAt, dayAnalyses)); err != nil {
 		return err
 	}
 
@@ -59,7 +63,7 @@ func (w *SummaryWriter) UpdateForAnalysis(ctx context.Context, analysis domain.M
 		return err
 	}
 
-	return w.weekly.Upsert(ctx, buildWeeklySummary(analysis.UserID, weekStart, analysis.CreatedAt, weekAnalyses))
+	return w.weekly.Upsert(ctx, buildWeeklySummary(analysis.UserID, weekStart, generatedAt, weekAnalyses))
 }
 
 func buildDailySummary(userID string, dayStart, generatedAt time.Time, analyses []domain.MessageAnalysis) domain.DailySummary {

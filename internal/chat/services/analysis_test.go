@@ -19,19 +19,18 @@ func TestPersistMessageAnalysis(t *testing.T) {
 		analyses := newMockMessageAnalysisCreator(t)
 		clock := newMockClock(t)
 
-		now := time.Date(2026, time.June, 1, 10, 0, 0, 0, time.UTC)
+		messageCreatedAt := time.Date(2026, time.May, 28, 9, 15, 0, 0, time.UTC)
 		history := []domain.Message{
 			{ID: "msg_user", Sender: domain.SenderUser, Content: "I argued with my manager and felt anxious"},
 			{ID: "msg_assistant", Sender: domain.SenderAssistant, Content: "What happened next?"},
 		}
 		userMessage := domain.Message{
-			ID:      "msg_user",
-			ChatID:  "cht_123",
-			UserID:  "usr_123",
-			Content: "I argued with my manager and felt anxious",
+			ID:        "msg_user",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			Content:   "I argued with my manager and felt anxious",
+			CreatedAt: messageCreatedAt,
 		}
-
-		clock.EXPECT().Now().Return(now).Once()
 		extractor.EXPECT().
 			ExtractEvent(mock.Anything, history).
 			Return(domain.ExtractedEvent{
@@ -52,7 +51,7 @@ func TestPersistMessageAnalysis(t *testing.T) {
 				require.False(t, *analysis.EnoughContext)
 				require.Equal(t, []domain.ContextGap{domain.ContextGapUserReaction}, analysis.ContextGaps)
 				require.Equal(t, "The user argued with their manager.", analysis.ExtractedEvent.EventSummary)
-				require.Equal(t, now, analysis.CreatedAt)
+				require.Equal(t, messageCreatedAt, analysis.CreatedAt)
 				require.Empty(t, analysis.ClassifierProvider)
 				return nil
 			}).
@@ -74,13 +73,12 @@ func TestPersistMessageAnalysis(t *testing.T) {
 			{ID: "msg_user", Sender: domain.SenderUser, Content: "I argued with my manager and felt anxious"},
 		}
 		userMessage := domain.Message{
-			ID:      "msg_user",
-			ChatID:  "cht_123",
-			UserID:  "usr_123",
-			Content: "I argued with my manager and felt anxious",
+			ID:        "msg_user",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			Content:   "I argued with my manager and felt anxious",
+			CreatedAt: now,
 		}
-
-		clock.EXPECT().Now().Return(now).Once()
 		extractor.EXPECT().
 			ExtractEvent(mock.Anything, history).
 			Return(domain.ExtractedEvent{
@@ -117,13 +115,12 @@ func TestPersistMessageAnalysis(t *testing.T) {
 			{ID: "msg_user", Sender: domain.SenderUser, Content: "I argued with my manager and felt anxious"},
 		}
 		userMessage := domain.Message{
-			ID:      "msg_user",
-			ChatID:  "cht_123",
-			UserID:  "usr_123",
-			Content: "I argued with my manager and felt anxious",
+			ID:        "msg_user",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			Content:   "I argued with my manager and felt anxious",
+			CreatedAt: now,
 		}
-
-		clock.EXPECT().Now().Return(now).Once()
 		extractor.EXPECT().
 			ExtractEvent(mock.Anything, history).
 			Return(domain.ExtractedEvent{
@@ -167,13 +164,12 @@ func TestPersistMessageAnalysis(t *testing.T) {
 
 		now := time.Date(2026, time.June, 1, 11, 30, 0, 0, time.UTC)
 		userMessage := domain.Message{
-			ID:      "msg_user",
-			ChatID:  "cht_123",
-			UserID:  "usr_123",
-			Content: "I argued with my manager and felt anxious",
+			ID:        "msg_user",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			Content:   "I argued with my manager and felt anxious",
+			CreatedAt: now,
 		}
-
-		clock.EXPECT().Now().Return(now).Once()
 		feelingClassifier.EXPECT().
 			Classify(mock.Anything, userMessage.Content).
 			Return(domain.ClassificationResult{
@@ -205,13 +201,12 @@ func TestPersistMessageAnalysis(t *testing.T) {
 
 		now := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
 		userMessage := domain.Message{
-			ID:      "msg_user",
-			ChatID:  "cht_123",
-			UserID:  "usr_123",
-			Content: "I argued with my manager and felt anxious",
+			ID:        "msg_user",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			Content:   "I argued with my manager and felt anxious",
+			CreatedAt: now,
 		}
-
-		clock.EXPECT().Now().Return(now).Once()
 		feelingClassifier.EXPECT().
 			Classify(mock.Anything, userMessage.Content).
 			Return(domain.ClassificationResult{
@@ -240,13 +235,12 @@ func TestPersistMessageAnalysis(t *testing.T) {
 
 		now := time.Date(2026, time.June, 1, 12, 30, 0, 0, time.UTC)
 		userMessage := domain.Message{
-			ID:      "msg_user",
-			ChatID:  "cht_123",
-			UserID:  "usr_123",
-			Content: "I argued with my manager and felt anxious",
+			ID:        "msg_user",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			Content:   "I argued with my manager and felt anxious",
+			CreatedAt: now,
 		}
-
-		clock.EXPECT().Now().Return(now).Once()
 		feelingClassifier.EXPECT().
 			Classify(mock.Anything, userMessage.Content).
 			Return(domain.ClassificationResult{
@@ -263,6 +257,40 @@ func TestPersistMessageAnalysis(t *testing.T) {
 
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.Len(t, summaries.analyses, 1)
+	})
+
+	t.Run("should fall back to clock when message created at is zero", func(t *testing.T) {
+		feelingClassifier := newMockFeelingClassifier(t)
+		analyses := newMockMessageAnalysisCreator(t)
+		clock := newMockClock(t)
+
+		now := time.Date(2026, time.June, 1, 13, 0, 0, 0, time.UTC)
+		userMessage := domain.Message{
+			ID:      "msg_user",
+			ChatID:  "cht_123",
+			UserID:  "usr_123",
+			Content: "I argued with my manager and felt anxious",
+		}
+
+		clock.EXPECT().Now().Return(now).Once()
+		feelingClassifier.EXPECT().
+			Classify(mock.Anything, userMessage.Content).
+			Return(domain.ClassificationResult{
+				PrimaryFeeling: domain.FeelingScore{Label: "anxious", Confidence: 0.91},
+				ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+			}, nil).
+			Once()
+		analyses.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
+			RunAndReturn(func(_ context.Context, analysis domain.MessageAnalysis) error {
+				require.Equal(t, now, analysis.CreatedAt)
+				return nil
+			}).
+			Once()
+
+		err := persistMessageAnalysis(context.Background(), feelingClassifier, nil, analyses, nil, clock, nil, userMessage)
+
+		require.NoError(t, err)
 	})
 }
 

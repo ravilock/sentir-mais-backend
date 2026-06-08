@@ -131,7 +131,7 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 		}
 
 		chats.EXPECT().FindByID(mock.Anything, "cht_123").Return(chatRecord, nil).Once()
-		clock.EXPECT().Now().Return(now).Twice()
+		clock.EXPECT().Now().Return(now).Once()
 		messages.EXPECT().Create(mock.Anything, mock.AnythingOfType("domain.Message")).Return(nil).Twice()
 		history.EXPECT().ListByChatID(mock.Anything, "cht_123").Return([]domain.Message{{ID: "msg_prev", ChatID: "cht_123", UserID: "usr_123", Content: "prev"}}, nil).Once()
 		responder.EXPECT().GenerateReply(mock.Anything, mock.AnythingOfType("[]domain.Message")).Return("assistant reply", nil).Once()
@@ -195,7 +195,7 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 		}
 
 		chats.EXPECT().FindByID(mock.Anything, "cht_123").Return(chatRecord, nil).Once()
-		clock.EXPECT().Now().Return(now).Twice()
+		clock.EXPECT().Now().Return(now).Once()
 		messages.EXPECT().Create(mock.Anything, mock.AnythingOfType("domain.Message")).Return(nil).Twice()
 		history.EXPECT().ListByChatID(mock.Anything, "cht_123").Return(historyMessages, nil).Once()
 		responder.EXPECT().GenerateReply(mock.Anything, historyMessages).Return("assistant reply", nil).Once()

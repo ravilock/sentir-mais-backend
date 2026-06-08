@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -65,6 +66,16 @@ func (c *Client) Classify(ctx context.Context, text string) (domain.Classificati
 		return domain.ClassificationResult{}, fmt.Errorf("the classifier is disabled")
 	}
 
+	requestSummary := map[string]any{
+		"base_url":     c.baseURL,
+		"text_length":  len(text),
+		"top_k":        defaultTopK,
+		"multi_label":  true,
+		"text_preview": previewText(text, 200),
+	}
+	startedAt := time.Now()
+	c.logger.DebugContext(ctx, "dispatching classifier request", "summary", requestSummary)
+
 	requestBody, err := json.Marshal(classifyRequest{
 		Text:       text,
 		TopK:       defaultTopK,
@@ -86,6 +97,11 @@ func (c *Client) Classify(ctx context.Context, text string) (domain.Classificati
 
 	res, err := c.httpClient.Do(req)
 	if err != nil {
+		c.logger.ErrorContext(ctx, "classifier request failed",
+			"summary", requestSummary,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"error", err,
+		)
 		return domain.ClassificationResult{}, fmt.Errorf("perform classify request: %w", err)
 	}
 	defer func() {
@@ -95,15 +111,33 @@ func (c *Client) Classify(ctx context.Context, text string) (domain.Classificati
 	}()
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return domain.ClassificationResult{}, fmt.Errorf("classifier returned status %d", res.StatusCode)
+		snippet, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		c.logger.ErrorContext(ctx, "classifier returned non-success status",
+			"summary", requestSummary,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"status_code", res.StatusCode,
+			"response_preview", strings.TrimSpace(string(snippet)),
+		)
+		return domain.ClassificationResult{}, fmt.Errorf("classifier returned status %d: %s", res.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 
 	var payload classifyResponse
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		c.logger.ErrorContext(ctx, "classifier returned invalid response",
+			"summary", requestSummary,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"error", err,
+		)
 		return domain.ClassificationResult{}, fmt.Errorf("decode classify response: %w", err)
 	}
 
-	c.logger.DebugContext(ctx, "classifier response received", "model", payload.ModelName, "primary_feeling", payload.PrimaryFeeling.Label)
+	c.logger.InfoContext(ctx, "classifier response received",
+		"summary", requestSummary,
+		"duration_ms", time.Since(startedAt).Milliseconds(),
+		"model", payload.ModelName,
+		"primary_feeling", payload.PrimaryFeeling.Label,
+		"score_count", len(payload.AllScores),
+	)
 
 	return domain.ClassificationResult{
 		PrimaryFeeling:    toFeelingScore(payload.PrimaryFeeling),
@@ -111,6 +145,15 @@ func (c *Client) Classify(ctx context.Context, text string) (domain.Classificati
 		AllScores:         toFeelingScores(payload.AllScores),
 		ModelName:         payload.ModelName,
 	}, nil
+}
+
+func previewText(value string, limit int) string {
+	normalized := strings.Join(strings.Fields(value), " ")
+	if len(normalized) <= limit {
+		return normalized
+	}
+
+	return normalized[:limit] + "..."
 }
 
 func toFeelingScore(score feelingScoreResponse) domain.FeelingScore {

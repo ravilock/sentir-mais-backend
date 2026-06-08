@@ -103,6 +103,14 @@ func (p *Processor) Process(ctx context.Context, job analysisqueue.AnalysisJob) 
 	if p.history == nil {
 		return errors.New("message history lister is required")
 	}
+	p.logger.InfoContext(ctx, "analysis processing started",
+		"job_id", job.JobID,
+		"chat_id", job.ChatID,
+		"user_id", job.UserID,
+		"message_id", job.MessageID,
+		"stage", job.Stage,
+		"attempt", job.Attempt,
+	)
 	if p.finder != nil {
 		exists, err := p.finder.ExistsByMessageID(ctx, job.MessageID)
 		if err != nil {
@@ -124,6 +132,13 @@ func (p *Processor) Process(ctx context.Context, job analysisqueue.AnalysisJob) 
 	if err != nil {
 		return err
 	}
+	p.logger.DebugContext(ctx, "analysis history loaded",
+		"job_id", job.JobID,
+		"chat_id", job.ChatID,
+		"user_id", job.UserID,
+		"message_id", job.MessageID,
+		"history_count", len(history),
+	)
 
 	message, ok := findTargetMessage(history, job)
 	if !ok {
@@ -168,6 +183,13 @@ func (p *Processor) persistMessageAnalysis(ctx context.Context, job analysisqueu
 	}
 
 	if p.extractor != nil {
+		p.logger.InfoContext(ctx, "analysis extraction started",
+			"job_id", job.JobID,
+			"chat_id", job.ChatID,
+			"user_id", job.UserID,
+			"message_id", job.MessageID,
+			"history_count", len(history),
+		)
 		extractedEvent, err := p.extractEventWithRetries(ctx, job, history)
 		if err != nil {
 			if p.classifier == nil {
@@ -185,14 +207,46 @@ func (p *Processor) persistMessageAnalysis(ctx context.Context, job analysisqueu
 			analysis.ExtractedEvent = &extractedEvent
 			analysis.EnoughContext = boolPointer(extractedEvent.EnoughContext)
 			analysis.ContextGaps = extractedEvent.ContextGaps
+			p.logger.InfoContext(ctx, "analysis extraction completed",
+				"job_id", job.JobID,
+				"chat_id", job.ChatID,
+				"user_id", job.UserID,
+				"message_id", job.MessageID,
+				"enough_context", extractedEvent.EnoughContext,
+				"context_gaps", extractedEvent.ContextGaps,
+				"has_what_happened", strings.TrimSpace(extractedEvent.WhatHappened) != "",
+				"felt_emotions_count", len(extractedEvent.FeltEmotionsDescribedByUser),
+				"has_user_reaction", strings.TrimSpace(extractedEvent.UserReaction) != "",
+				"has_expected_outcome", strings.TrimSpace(extractedEvent.ExpectedOutcomeOrSelfExpectation) != "",
+			)
 		}
 	}
 
-	if p.classifier != nil && shouldProceedToClassifier(analysis, analysis.ExtractedEvent != nil) {
+	shouldClassify := p.classifier != nil && shouldProceedToClassifier(analysis, analysis.ExtractedEvent != nil)
+	p.logger.InfoContext(ctx, "analysis classifier decision evaluated",
+		"job_id", job.JobID,
+		"chat_id", job.ChatID,
+		"user_id", job.UserID,
+		"message_id", job.MessageID,
+		"classifier_enabled", p.classifier != nil,
+		"has_extracted_event", analysis.ExtractedEvent != nil,
+		"enough_context", analysis.EnoughContext,
+		"context_gaps", analysis.ContextGaps,
+		"should_classify", shouldClassify,
+	)
+	if shouldClassify {
 		classifierInputText := message.Content
 		if analysis.ExtractedEvent != nil {
 			classifierInputText = buildClassifierInputText(*analysis.ExtractedEvent)
 		}
+		p.logger.InfoContext(ctx, "analysis classification started",
+			"job_id", job.JobID,
+			"chat_id", job.ChatID,
+			"user_id", job.UserID,
+			"message_id", job.MessageID,
+			"input_length", len(classifierInputText),
+			"input_preview", previewText(classifierInputText, 200),
+		)
 
 		result, err := p.classifyWithRetries(ctx, job, classifierInputText)
 		if err != nil {
@@ -207,6 +261,26 @@ func (p *Processor) persistMessageAnalysis(ctx context.Context, job analysisqueu
 			analysis.ClassifierProvider = classifier.ProviderName
 			analysis.ClassifierModel = result.ModelName
 		}
+		p.logger.InfoContext(ctx, "analysis classification completed",
+			"job_id", job.JobID,
+			"chat_id", job.ChatID,
+			"user_id", job.UserID,
+			"message_id", job.MessageID,
+			"primary_feeling", result.PrimaryFeeling.Label,
+			"model_name", result.ModelName,
+			"score_count", len(result.AllScores),
+		)
+	} else if p.classifier != nil {
+		p.logger.InfoContext(ctx, "analysis classification skipped",
+			"job_id", job.JobID,
+			"chat_id", job.ChatID,
+			"user_id", job.UserID,
+			"message_id", job.MessageID,
+			"has_extracted_event", analysis.ExtractedEvent != nil,
+			"enough_context", analysis.EnoughContext,
+			"context_gaps", analysis.ContextGaps,
+			"reason", "insufficient_extracted_context",
+		)
 	}
 
 	if analysis.ExtractedEvent == nil && analysis.PrimaryFeeling.Label == "" {
@@ -414,6 +488,15 @@ func compactClassifierStrings(values []string) []string {
 	}
 
 	return compacted
+}
+
+func previewText(value string, limit int) string {
+	normalized := strings.Join(strings.Fields(value), " ")
+	if len(normalized) <= limit {
+		return normalized
+	}
+
+	return normalized[:limit] + "..."
 }
 
 type realClock struct{}

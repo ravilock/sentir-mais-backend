@@ -160,6 +160,7 @@ func (c *PrompterClient) GenerateReply(ctx context.Context, history []domain.Mes
 		return "", fmt.Errorf("the prompter is disabled")
 	}
 
+	requestSummary := c.buildPrompterRequestSummary(prompterKindSupportive, history, 0.3, 0, nil)
 	body, err := json.Marshal(generateRequest{
 		Kind:        prompterKindSupportive,
 		Messages:    buildPromptMessages(history),
@@ -169,40 +170,17 @@ func (c *PrompterClient) GenerateReply(ctx context.Context, history []domain.Mes
 		return "", fmt.Errorf("marshal prompter request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/generate", bytes.NewReader(body))
+	payload, err := c.doGenerate(ctx, body, requestSummary)
 	if err != nil {
-		return "", fmt.Errorf("build prompter request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", prompterUserAgent)
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", c.apiKey)
+		return "", err
 	}
 
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("perform prompter request: %w", err)
-	}
-	defer func() {
-		if err := res.Body.Close(); err != nil {
-			c.logger.WarnContext(ctx, "failed to close prompter response body", "error", err)
-		}
-	}()
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		snippet, _ := io.ReadAll(io.LimitReader(res.Body, 512))
-		return "", fmt.Errorf("prompter returned status %d: %s", res.StatusCode, strings.TrimSpace(string(snippet)))
-	}
-
-	var payload generateResponse
-	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode prompter response: %w", err)
-	}
-	if strings.TrimSpace(payload.OutputText) == "" {
-		return "", fmt.Errorf("prompter response did not include output_text")
-	}
-
-	c.logger.Debug("Prompter response received", "payload", payload)
+	c.logger.InfoContext(ctx, "prompter reply received",
+		"kind", payload.Kind,
+		"provider", payload.Provider,
+		"model", payload.Model,
+		"output_length", len(payload.OutputText),
+	)
 	return payload.OutputText, nil
 }
 
@@ -211,6 +189,9 @@ func (c *PrompterClient) ExtractEvent(ctx context.Context, history []domain.Mess
 		return domain.ExtractedEvent{}, fmt.Errorf("the prompter is disabled")
 	}
 
+	requestSummary := c.buildPrompterRequestSummary(prompterKindExtraction, history, 0.1, 1200, map[string]string{
+		"type": "json_object",
+	})
 	body, err := json.Marshal(generateRequest{
 		Kind:        prompterKindExtraction,
 		Messages:    buildExtractionPromptMessages(history),
@@ -224,21 +205,34 @@ func (c *PrompterClient) ExtractEvent(ctx context.Context, history []domain.Mess
 		return domain.ExtractedEvent{}, fmt.Errorf("marshal extraction request: %w", err)
 	}
 
-	payload, err := c.doGenerate(ctx, body)
+	payload, err := c.doGenerate(ctx, body, requestSummary)
 	if err != nil {
 		return domain.ExtractedEvent{}, err
 	}
 
-	c.logger.Debug("Prompter extraction response received", "outputText", payload.OutputText)
+	c.logger.DebugContext(ctx, "prompter extraction response received",
+		"provider", payload.Provider,
+		"model", payload.Model,
+		"output_preview", previewText(payload.OutputText, 300),
+	)
 	extracted, err := decodeExtractedEventPayload(payload.OutputText)
 	if err != nil {
+		c.logger.ErrorContext(ctx, "prompter extraction payload decode failed",
+			"provider", payload.Provider,
+			"model", payload.Model,
+			"output_preview", previewText(payload.OutputText, 300),
+			"error", err,
+		)
 		return domain.ExtractedEvent{}, fmt.Errorf("decode extracted event payload: %w", err)
 	}
 
 	return extracted.toDomain(), nil
 }
 
-func (c *PrompterClient) doGenerate(ctx context.Context, body []byte) (generateResponse, error) {
+func (c *PrompterClient) doGenerate(ctx context.Context, body []byte, requestSummary map[string]any) (generateResponse, error) {
+	startedAt := time.Now()
+	c.logger.DebugContext(ctx, "dispatching prompter request", "summary", requestSummary)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/generate", bytes.NewReader(body))
 	if err != nil {
 		return generateResponse{}, fmt.Errorf("build prompter request: %w", err)
@@ -251,6 +245,11 @@ func (c *PrompterClient) doGenerate(ctx context.Context, body []byte) (generateR
 
 	res, err := c.httpClient.Do(req)
 	if err != nil {
+		c.logger.ErrorContext(ctx, "prompter request failed",
+			"summary", requestSummary,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"error", err,
+		)
 		return generateResponse{}, fmt.Errorf("perform prompter request: %w", err)
 	}
 	defer func() {
@@ -261,16 +260,36 @@ func (c *PrompterClient) doGenerate(ctx context.Context, body []byte) (generateR
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		snippet, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		c.logger.ErrorContext(ctx, "prompter returned non-success status",
+			"summary", requestSummary,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"status_code", res.StatusCode,
+			"response_preview", strings.TrimSpace(string(snippet)),
+		)
 		return generateResponse{}, fmt.Errorf("prompter returned status %d: %s", res.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 
 	var payload generateResponse
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		c.logger.ErrorContext(ctx, "prompter returned invalid response",
+			"summary", requestSummary,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"error", err,
+		)
 		return generateResponse{}, fmt.Errorf("decode prompter response: %w", err)
 	}
 	if strings.TrimSpace(payload.OutputText) == "" {
 		return generateResponse{}, fmt.Errorf("prompter response did not include output_text")
 	}
+
+	c.logger.InfoContext(ctx, "prompter response received",
+		"summary", requestSummary,
+		"duration_ms", time.Since(startedAt).Milliseconds(),
+		"provider", payload.Provider,
+		"model", payload.Model,
+		"kind", payload.Kind,
+		"output_length", len(payload.OutputText),
+	)
 
 	return payload, nil
 }
@@ -323,6 +342,41 @@ func mapMessageRole(sender domain.Sender) string {
 	}
 
 	return "user"
+}
+
+func previewText(value string, limit int) string {
+	normalized := strings.Join(strings.Fields(value), " ")
+	if len(normalized) <= limit {
+		return normalized
+	}
+
+	return normalized[:limit] + "..."
+}
+
+func (c *PrompterClient) buildPrompterRequestSummary(kind string, history []domain.Message, temperature float64, maxTokens int, responseFormat map[string]string) map[string]any {
+	messageRoles := make([]string, 0, len(history))
+	messageLengths := make([]int, 0, len(history))
+	for _, message := range history {
+		messageRoles = append(messageRoles, mapMessageRole(message.Sender))
+		messageLengths = append(messageLengths, len(message.Content))
+	}
+
+	summary := map[string]any{
+		"kind":            kind,
+		"base_url":        c.baseURL,
+		"history_count":   len(history),
+		"message_roles":   messageRoles,
+		"message_lengths": messageLengths,
+		"temperature":     temperature,
+	}
+	if maxTokens > 0 {
+		summary["max_tokens"] = maxTokens
+	}
+	if responseFormat != nil {
+		summary["response_format"] = responseFormat
+	}
+
+	return summary
 }
 
 type extractedEventPayload struct {

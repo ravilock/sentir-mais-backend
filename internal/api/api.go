@@ -130,7 +130,7 @@ func NewServer(cfg config.Config) (Server, error) {
 	listChatsService := chatservices.NewListChatsService(chatRepository, messageRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	summaryWriter := dashboardservices.NewSummaryWriter(messageAnalysisRepository, dailySummaryRepository, weeklySummaryRepository)
-	analysisProcessor := analysisservices.NewProcessorWithDeadLetters(messageRepository, extractor, classifierClient, messageAnalysisRepository, summaryWriter, deadLetterRepository, nil)
+	analysisProcessor := analysisservices.NewProcessorWithDeadLetters(messageRepository, extractor, classifierClient, messageAnalysisRepository, summaryWriter, deadLetterRepository, nil, logger.With("component", "analysis-processor"))
 	analysisWorker := analysisworker.NewWorker(analysisQueue, analysisProcessor, deadLetterRepository, logger.With("component", "analysis-worker"))
 	dashboardService := dashboardservices.NewGetWeekService(weeklySummaryRepository)
 	timelineService := dashboardservices.NewGetTimelineService(dailySummaryRepository)

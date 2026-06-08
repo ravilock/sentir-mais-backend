@@ -106,8 +106,14 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 		return false, errors.New("analysis processor is required")
 	}
 
-	if _, err := w.queue.MoveDueRetries(ctx, w.clock.Now(), w.retryLimit); err != nil {
+	movedRetries, err := w.queue.MoveDueRetries(ctx, w.clock.Now(), w.retryLimit)
+	if err != nil {
 		return false, err
+	}
+	if movedRetries > 0 {
+		w.logger.InfoContext(ctx, "analysis delayed retries moved",
+			"count", movedRetries,
+		)
 	}
 
 	consumed, err := w.queue.Consume(ctx, w.consumeTimeout)
@@ -118,6 +124,14 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 
 		return false, err
 	}
+	w.logger.DebugContext(ctx, "analysis job consumed",
+		"job_id", consumed.Job.JobID,
+		"chat_id", consumed.Job.ChatID,
+		"user_id", consumed.Job.UserID,
+		"message_id", consumed.Job.MessageID,
+		"stage", consumed.Job.Stage,
+		"attempt", consumed.Job.Attempt,
+	)
 
 	lockOwner := consumed.Job.JobID
 	if lockOwner == "" {
@@ -128,6 +142,13 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 		return false, w.retryOrDeadLetter(ctx, consumed, w.lockRetryDelay, err)
 	}
 	if !locked {
+		w.logger.InfoContext(ctx, "analysis job delayed by active chat lock",
+			"job_id", consumed.Job.JobID,
+			"chat_id", consumed.Job.ChatID,
+			"user_id", consumed.Job.UserID,
+			"message_id", consumed.Job.MessageID,
+			"attempt", consumed.Job.Attempt,
+		)
 		return false, w.retryOrDeadLetter(ctx, consumed, w.lockRetryDelay, nil)
 	}
 	defer func() {
@@ -151,6 +172,14 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	if err := w.queue.Ack(ctx, consumed); err != nil {
 		return false, err
 	}
+	w.logger.InfoContext(ctx, "analysis job processed",
+		"job_id", consumed.Job.JobID,
+		"chat_id", consumed.Job.ChatID,
+		"user_id", consumed.Job.UserID,
+		"message_id", consumed.Job.MessageID,
+		"stage", consumed.Job.Stage,
+		"attempt", consumed.Job.Attempt,
+	)
 
 	return true, nil
 }
@@ -182,6 +211,16 @@ func (w *Worker) retryOrDeadLetter(ctx context.Context, consumed analysisqueue.C
 	}
 
 	retryAt := w.clock.Now().Add(delay)
+	w.logger.InfoContext(ctx, "analysis job scheduled for retry",
+		"job_id", consumed.Job.JobID,
+		"chat_id", consumed.Job.ChatID,
+		"user_id", consumed.Job.UserID,
+		"message_id", consumed.Job.MessageID,
+		"stage", consumed.Job.Stage,
+		"attempt", consumed.Job.Attempt,
+		"run_at", retryAt.UTC().Format(time.RFC3339),
+		"error", cause,
+	)
 	if err := w.queue.RetryLater(ctx, consumed, retryAt); err != nil {
 		if cause != nil {
 			return errors.Join(cause, err)
@@ -207,7 +246,7 @@ func (w *Worker) persistDeadLetter(ctx context.Context, job analysisqueue.Analys
 		errorMessage = cause.Error()
 	}
 
-	return w.deadLetters.Create(ctx, domain.AnalysisDeadLetter{
+	deadLetter := domain.AnalysisDeadLetter{
 		ID:        deadLetterID,
 		JobID:     job.JobID,
 		ChatID:    job.ChatID,
@@ -218,7 +257,23 @@ func (w *Worker) persistDeadLetter(ctx context.Context, job analysisqueue.Analys
 		Error:     errorMessage,
 		Attempt:   job.Attempt,
 		CreatedAt: w.clock.Now(),
-	})
+	}
+	if err := w.deadLetters.Create(ctx, deadLetter); err != nil {
+		return err
+	}
+
+	w.logger.ErrorContext(ctx, "analysis job dead-lettered",
+		"dead_letter_id", deadLetter.ID,
+		"job_id", job.JobID,
+		"chat_id", job.ChatID,
+		"user_id", job.UserID,
+		"message_id", job.MessageID,
+		"stage", job.Stage,
+		"reason", deadLetter.Reason,
+		"attempt", job.Attempt,
+		"error", deadLetter.Error,
+	)
+	return nil
 }
 
 type realClock struct{}

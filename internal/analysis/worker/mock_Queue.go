@@ -70,6 +70,65 @@ func (_c *MockQueue_Ack_Call) RunAndReturn(run func(context.Context, queue.Consu
 	return _c
 }
 
+// AcquireChatLock provides a mock function with given fields: ctx, chatID, owner, ttl
+func (_m *MockQueue) AcquireChatLock(ctx context.Context, chatID string, owner string, ttl time.Duration) (bool, error) {
+	ret := _m.Called(ctx, chatID, owner, ttl)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AcquireChatLock")
+	}
+
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, time.Duration) (bool, error)); ok {
+		return rf(ctx, chatID, owner, ttl)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, time.Duration) bool); ok {
+		r0 = rf(ctx, chatID, owner, ttl)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, time.Duration) error); ok {
+		r1 = rf(ctx, chatID, owner, ttl)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockQueue_AcquireChatLock_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AcquireChatLock'
+type MockQueue_AcquireChatLock_Call struct {
+	*mock.Call
+}
+
+// AcquireChatLock is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chatID string
+//   - owner string
+//   - ttl time.Duration
+func (_e *MockQueue_Expecter) AcquireChatLock(ctx interface{}, chatID interface{}, owner interface{}, ttl interface{}) *MockQueue_AcquireChatLock_Call {
+	return &MockQueue_AcquireChatLock_Call{Call: _e.mock.On("AcquireChatLock", ctx, chatID, owner, ttl)}
+}
+
+func (_c *MockQueue_AcquireChatLock_Call) Run(run func(ctx context.Context, chatID string, owner string, ttl time.Duration)) *MockQueue_AcquireChatLock_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(time.Duration))
+	})
+	return _c
+}
+
+func (_c *MockQueue_AcquireChatLock_Call) Return(_a0 bool, _a1 error) *MockQueue_AcquireChatLock_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockQueue_AcquireChatLock_Call) RunAndReturn(run func(context.Context, string, string, time.Duration) (bool, error)) *MockQueue_AcquireChatLock_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Consume provides a mock function with given fields: ctx, timeout
 func (_m *MockQueue) Consume(ctx context.Context, timeout time.Duration) (queue.ConsumedJob, error) {
 	ret := _m.Called(ctx, timeout)
@@ -123,6 +182,53 @@ func (_c *MockQueue_Consume_Call) Return(_a0 queue.ConsumedJob, _a1 error) *Mock
 }
 
 func (_c *MockQueue_Consume_Call) RunAndReturn(run func(context.Context, time.Duration) (queue.ConsumedJob, error)) *MockQueue_Consume_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeadLetter provides a mock function with given fields: ctx, consumed
+func (_m *MockQueue) DeadLetter(ctx context.Context, consumed queue.ConsumedJob) error {
+	ret := _m.Called(ctx, consumed)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeadLetter")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, queue.ConsumedJob) error); ok {
+		r0 = rf(ctx, consumed)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockQueue_DeadLetter_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeadLetter'
+type MockQueue_DeadLetter_Call struct {
+	*mock.Call
+}
+
+// DeadLetter is a helper method to define mock.On call
+//   - ctx context.Context
+//   - consumed queue.ConsumedJob
+func (_e *MockQueue_Expecter) DeadLetter(ctx interface{}, consumed interface{}) *MockQueue_DeadLetter_Call {
+	return &MockQueue_DeadLetter_Call{Call: _e.mock.On("DeadLetter", ctx, consumed)}
+}
+
+func (_c *MockQueue_DeadLetter_Call) Run(run func(ctx context.Context, consumed queue.ConsumedJob)) *MockQueue_DeadLetter_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(queue.ConsumedJob))
+	})
+	return _c
+}
+
+func (_c *MockQueue_DeadLetter_Call) Return(_a0 error) *MockQueue_DeadLetter_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockQueue_DeadLetter_Call) RunAndReturn(run func(context.Context, queue.ConsumedJob) error) *MockQueue_DeadLetter_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -181,6 +287,54 @@ func (_c *MockQueue_MoveDueRetries_Call) Return(_a0 int64, _a1 error) *MockQueue
 }
 
 func (_c *MockQueue_MoveDueRetries_Call) RunAndReturn(run func(context.Context, time.Time, int64) (int64, error)) *MockQueue_MoveDueRetries_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReleaseChatLock provides a mock function with given fields: ctx, chatID, owner
+func (_m *MockQueue) ReleaseChatLock(ctx context.Context, chatID string, owner string) error {
+	ret := _m.Called(ctx, chatID, owner)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReleaseChatLock")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = rf(ctx, chatID, owner)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockQueue_ReleaseChatLock_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReleaseChatLock'
+type MockQueue_ReleaseChatLock_Call struct {
+	*mock.Call
+}
+
+// ReleaseChatLock is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chatID string
+//   - owner string
+func (_e *MockQueue_Expecter) ReleaseChatLock(ctx interface{}, chatID interface{}, owner interface{}) *MockQueue_ReleaseChatLock_Call {
+	return &MockQueue_ReleaseChatLock_Call{Call: _e.mock.On("ReleaseChatLock", ctx, chatID, owner)}
+}
+
+func (_c *MockQueue_ReleaseChatLock_Call) Run(run func(ctx context.Context, chatID string, owner string)) *MockQueue_ReleaseChatLock_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string), args[2].(string))
+	})
+	return _c
+}
+
+func (_c *MockQueue_ReleaseChatLock_Call) Return(_a0 error) *MockQueue_ReleaseChatLock_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockQueue_ReleaseChatLock_Call) RunAndReturn(run func(context.Context, string, string) error) *MockQueue_ReleaseChatLock_Call {
 	_c.Call.Return(run)
 	return _c
 }

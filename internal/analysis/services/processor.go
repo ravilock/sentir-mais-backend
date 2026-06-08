@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -66,15 +67,16 @@ type Processor struct {
 	finder      MessageAnalysisFinder
 	summaries   SummaryWriter
 	deadLetters DeadLetterCreator
+	logger      *slog.Logger
 	clock       Clock
 	sleep       func(context.Context, time.Duration) error
 }
 
-func NewProcessor(history MessageHistoryLister, extractor Extractor, classifier FeelingClassifier, analyses MessageAnalysisCreator, summaries SummaryWriter, clock Clock) *Processor {
-	return NewProcessorWithDeadLetters(history, extractor, classifier, analyses, summaries, nil, clock)
+func NewProcessor(history MessageHistoryLister, extractor Extractor, classifier FeelingClassifier, analyses MessageAnalysisCreator, summaries SummaryWriter, clock Clock, logger *slog.Logger) *Processor {
+	return NewProcessorWithDeadLetters(history, extractor, classifier, analyses, summaries, nil, clock, logger)
 }
 
-func NewProcessorWithDeadLetters(history MessageHistoryLister, extractor Extractor, classifier FeelingClassifier, analyses MessageAnalysisCreator, summaries SummaryWriter, deadLetters DeadLetterCreator, clock Clock) *Processor {
+func NewProcessorWithDeadLetters(history MessageHistoryLister, extractor Extractor, classifier FeelingClassifier, analyses MessageAnalysisCreator, summaries SummaryWriter, deadLetters DeadLetterCreator, clock Clock, logger *slog.Logger) *Processor {
 	if clock == nil {
 		clock = realClock{}
 	}
@@ -86,6 +88,7 @@ func NewProcessorWithDeadLetters(history MessageHistoryLister, extractor Extract
 		analyses:    analyses,
 		summaries:   summaries,
 		deadLetters: deadLetters,
+		logger:      logger,
 		clock:       clock,
 		sleep:       sleepContext,
 	}
@@ -106,6 +109,13 @@ func (p *Processor) Process(ctx context.Context, job analysisqueue.AnalysisJob) 
 			return err
 		}
 		if exists {
+			p.logger.InfoContext(ctx, "analysis job skipped because analysis already exists",
+				"job_id", job.JobID,
+				"chat_id", job.ChatID,
+				"user_id", job.UserID,
+				"message_id", job.MessageID,
+				"stage", job.Stage,
+			)
 			return nil
 		}
 	}
@@ -158,11 +168,19 @@ func (p *Processor) persistMessageAnalysis(ctx context.Context, job analysisqueu
 	}
 
 	if p.extractor != nil {
-		extractedEvent, err := p.extractEventWithRetries(ctx, history)
+		extractedEvent, err := p.extractEventWithRetries(ctx, job, history)
 		if err != nil {
 			if p.classifier == nil {
 				return p.deadLetter(ctx, job, string(analysisqueue.StageExtract), deadLetterReasonFailed, err)
 			}
+			p.logger.WarnContext(ctx, "analysis extraction exhausted; falling back to raw message classification",
+				"job_id", job.JobID,
+				"chat_id", job.ChatID,
+				"user_id", job.UserID,
+				"message_id", job.MessageID,
+				"stage", analysisqueue.StageExtract,
+				"error", err,
+			)
 		} else {
 			analysis.ExtractedEvent = &extractedEvent
 			analysis.EnoughContext = boolPointer(extractedEvent.EnoughContext)
@@ -176,7 +194,7 @@ func (p *Processor) persistMessageAnalysis(ctx context.Context, job analysisqueu
 			classifierInputText = buildClassifierInputText(*analysis.ExtractedEvent)
 		}
 
-		result, err := p.classifyWithRetries(ctx, classifierInputText)
+		result, err := p.classifyWithRetries(ctx, job, classifierInputText)
 		if err != nil {
 			return p.deadLetter(ctx, job, string(analysisqueue.StageClassify), deadLetterReasonFailed, err)
 		}
@@ -198,18 +216,34 @@ func (p *Processor) persistMessageAnalysis(ctx context.Context, job analysisqueu
 	if err := p.analyses.Create(ctx, analysis); err != nil {
 		return err
 	}
+	p.logger.InfoContext(ctx, "analysis persisted",
+		"job_id", job.JobID,
+		"analysis_id", analysis.ID,
+		"chat_id", analysis.ChatID,
+		"user_id", analysis.UserID,
+		"message_id", analysis.MessageID,
+		"primary_feeling", analysis.PrimaryFeeling.Label,
+		"enough_context", analysis.EnoughContext,
+	)
 	if p.summaries == nil {
 		return nil
 	}
 
-	if err := p.updateSummariesWithRetries(ctx, analysis); err != nil {
+	if err := p.updateSummariesWithRetries(ctx, job, analysis); err != nil {
 		return p.deadLetter(ctx, job, string(analysisqueue.StageSummaries), deadLetterReasonFailed, err)
 	}
+	p.logger.InfoContext(ctx, "analysis summaries updated",
+		"job_id", job.JobID,
+		"analysis_id", analysis.ID,
+		"chat_id", analysis.ChatID,
+		"user_id", analysis.UserID,
+		"message_id", analysis.MessageID,
+	)
 
 	return nil
 }
 
-func (p *Processor) extractEventWithRetries(ctx context.Context, history []domain.Message) (domain.ExtractedEvent, error) {
+func (p *Processor) extractEventWithRetries(ctx context.Context, job analysisqueue.AnalysisJob, history []domain.Message) (domain.ExtractedEvent, error) {
 	var lastErr error
 	for attempt := 1; attempt <= extractionMaxAttempts; attempt++ {
 		event, err := p.extractor.ExtractEvent(ctx, history)
@@ -218,6 +252,7 @@ func (p *Processor) extractEventWithRetries(ctx context.Context, history []domai
 		}
 
 		lastErr = err
+		p.logStageRetry(ctx, job, analysisqueue.StageExtract, attempt, extractionMaxAttempts, err)
 		if err := p.sleepBetweenAttempts(ctx, attempt, extractionMaxAttempts); err != nil {
 			return domain.ExtractedEvent{}, err
 		}
@@ -226,7 +261,7 @@ func (p *Processor) extractEventWithRetries(ctx context.Context, history []domai
 	return domain.ExtractedEvent{}, lastErr
 }
 
-func (p *Processor) classifyWithRetries(ctx context.Context, text string) (domain.ClassificationResult, error) {
+func (p *Processor) classifyWithRetries(ctx context.Context, job analysisqueue.AnalysisJob, text string) (domain.ClassificationResult, error) {
 	var lastErr error
 	for attempt := 1; attempt <= classifierMaxAttempts; attempt++ {
 		result, err := p.classifier.Classify(ctx, text)
@@ -235,6 +270,7 @@ func (p *Processor) classifyWithRetries(ctx context.Context, text string) (domai
 		}
 
 		lastErr = err
+		p.logStageRetry(ctx, job, analysisqueue.StageClassify, attempt, classifierMaxAttempts, err)
 		if err := p.sleepBetweenAttempts(ctx, attempt, classifierMaxAttempts); err != nil {
 			return domain.ClassificationResult{}, err
 		}
@@ -243,11 +279,12 @@ func (p *Processor) classifyWithRetries(ctx context.Context, text string) (domai
 	return domain.ClassificationResult{}, lastErr
 }
 
-func (p *Processor) updateSummariesWithRetries(ctx context.Context, analysis domain.MessageAnalysis) error {
+func (p *Processor) updateSummariesWithRetries(ctx context.Context, job analysisqueue.AnalysisJob, analysis domain.MessageAnalysis) error {
 	var lastErr error
 	for attempt := 1; attempt <= summaryMaxAttempts; attempt++ {
 		if err := p.summaries.UpdateForAnalysis(ctx, analysis); err != nil {
 			lastErr = err
+			p.logStageRetry(ctx, job, analysisqueue.StageSummaries, attempt, summaryMaxAttempts, err)
 			if err := p.sleepBetweenAttempts(ctx, attempt, summaryMaxAttempts); err != nil {
 				return err
 			}
@@ -258,6 +295,24 @@ func (p *Processor) updateSummariesWithRetries(ctx context.Context, analysis dom
 	}
 
 	return lastErr
+}
+
+func (p *Processor) logStageRetry(ctx context.Context, job analysisqueue.AnalysisJob, stage analysisqueue.Stage, attempt, maxAttempts int, err error) {
+	if attempt >= maxAttempts {
+		return
+	}
+
+	p.logger.WarnContext(ctx, "analysis stage retry scheduled",
+		"job_id", job.JobID,
+		"chat_id", job.ChatID,
+		"user_id", job.UserID,
+		"message_id", job.MessageID,
+		"stage", stage,
+		"stage_attempt", attempt,
+		"stage_max_attempts", maxAttempts,
+		"retry_after_seconds", int(stageRetryBackoff.Seconds()),
+		"error", err,
+	)
 }
 
 func (p *Processor) sleepBetweenAttempts(ctx context.Context, attempt, maxAttempts int) error {
@@ -292,6 +347,16 @@ func (p *Processor) deadLetter(ctx context.Context, job analysisqueue.AnalysisJo
 		return err
 	}
 
+	p.logger.ErrorContext(ctx, "analysis job dead-lettered",
+		"job_id", job.JobID,
+		"chat_id", job.ChatID,
+		"user_id", job.UserID,
+		"message_id", job.MessageID,
+		"stage", stage,
+		"reason", reason,
+		"attempt", job.Attempt,
+		"error", cause,
+	)
 	return ErrDeadLettered
 }
 

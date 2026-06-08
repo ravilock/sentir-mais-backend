@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
     depends_on:
       - mongodb
+      - redis
       - classifier
       - prompter
       - mongo-express
@@ -16,6 +17,9 @@ services:
       LLM_API_KEY: ${PROMPTER_LLM_API_KEY:-local-api-key}
       HTTP_ADDRESS: ":8001"
       MONGO_URI: "mongodb://mongodb:27017"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      ANALYSIS_QUEUE_NAME: "analysis-jobs"
       CLASSIFIER_BASE_URL: "http://classifier:8010"
       CLASSIFIER_API_KEY: ${CLASSIFIER_API_KEY:-sentir-mais-local-classifier-key}
       PROMPTER_BASE_URL: "http://prompter:8020"
@@ -29,6 +33,16 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: sentir-mais-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
 
   mongo-express:
     image: mongo-express:1.0.2-20
@@ -98,4 +112,5 @@ services:
 
 volumes:
   mongodb_data:
+  redis_data:
   classifier_models:

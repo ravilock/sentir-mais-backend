@@ -99,7 +99,16 @@ func (s *CreateChatService) enqueueAnalysis(ctx context.Context, message domain.
 		Stage:            analysisqueue.StageExtract,
 	}); err != nil {
 		s.logAnalysisEnqueueFailure(ctx, message, err)
+		return
 	}
+
+	s.logger.InfoContext(ctx, "analysis job enqueued",
+		"job_id", jobID,
+		"chat_id", message.ChatID,
+		"user_id", message.UserID,
+		"message_id", message.ID,
+		"stage", analysisqueue.StageExtract,
+	)
 }
 
 func (s *CreateChatService) logAnalysisEnqueueFailure(ctx context.Context, message domain.Message, err error) {

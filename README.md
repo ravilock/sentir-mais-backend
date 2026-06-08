@@ -20,17 +20,24 @@ Primeiro backend executável para o MVP do Sentir Mais, agora alinhado ao bootst
 - resposta conversacional stubada atrás de uma interface de LLM
 - middlewares básicos de request id, log, recover e CORS
 - aliases versionados em `/api/v1/*` sem remover as rotas atuais
-- persistência em MongoDB para usuários, sessões, chats e mensagens
+- persistência em MongoDB para usuários, sessões, chats, mensagens, análises, resumos e dead letters
+- pipeline assíncrono de análise com Redis Streams: o chat responde de forma síncrona, enquanto extração, classificação e atualização de dashboard rodam em background no mesmo processo do backend
 
 ## Rodando localmente
 
-Suba as dependencias locais:
+Para rodar tudo em containers:
 
 ```bash
 docker compose up -d
 ```
 
-Depois rode a API:
+Para rodar somente dependências em containers e a API local via Go:
+
+```bash
+make run-db
+```
+
+Depois rode a API local:
 
 ```bash
 go run ./cmd/sentir-mais-api
@@ -43,16 +50,20 @@ Variáveis opcionais:
 - `CORS_ALLOWED_ORIGINS` (CSV; default `http://localhost:3000,http://localhost:5173,http://localhost:4000`)
 - `MONGO_URI` (default `mongodb://localhost:27017`)
 - `MONGO_DATABASE` (default `sentir-mais`)
+- `REDIS_ADDR` (default `localhost:6379`)
+- `REDIS_PASSWORD` (default empty)
+- `ANALYSIS_QUEUE_NAME` (default `analysis-jobs`)
 - `PROMPTER_BASE_URL` (default empty; example `http://localhost:8020`)
 - `PROMPTER_API_KEY` (default empty; sent as the `Authorization` header to the prompter)
-- `PROMPTER_TIMEOUT_SECONDS` (default `10`)
+- `PROMPTER_TIMEOUT_SECONDS` (default `30`)
 - `CLASSIFIER_BASE_URL` (default empty; example `http://localhost:8010`)
 - `CLASSIFIER_API_KEY` (default empty; sent as the `Authorization` header to the classifier)
-- `CLASSIFIER_TIMEOUT_SECONDS` (default `10`)
+- `CLASSIFIER_TIMEOUT_SECONDS` (default `30`)
 
 O compose local sobe:
 
 - MongoDB em `mongodb://localhost:27017`
+- Redis em `localhost:6379`
 - Mongo Express em `http://localhost:8081`
 - Prompter em `http://localhost:8020`
 - Classifier em `http://localhost:8010`
@@ -139,9 +150,24 @@ export CLASSIFIER_BASE_URL=http://localhost:8010
 export CLASSIFIER_API_KEY=sentir-mais-local-classifier-key
 ```
 
-Se `PROMPTER_BASE_URL` estiver configurada, o backend usa `sentir-mais-prompter` para gerar as respostas conversacionais.
+Se `PROMPTER_BASE_URL` estiver configurada, o backend usa `sentir-mais-prompter` para gerar as respostas conversacionais. O mesmo cliente também é usado pelo worker para extração estruturada quando houver contexto suficiente.
 
-Se `CLASSIFIER_BASE_URL` estiver configurada, o backend classifica cada mensagem do usuario e persiste o resultado em `message_analyses`.
+Se `CLASSIFIER_BASE_URL` estiver configurada, o worker classifica mensagens de usuário de forma assíncrona e persiste o resultado em `message_analyses`.
+
+## Pipeline assíncrono de análise
+
+`POST /chats` e `POST /chats/{chatId}/messages` persistem a conversa e retornam a resposta do assistente sem esperar extração, classificação ou atualização de dashboard. Depois de persistir a mensagem do usuário, o backend tenta publicar um job em Redis Streams. Essa publicação é best-effort: se Redis estiver indisponível, o erro é logado e a resposta do chat continua sendo retornada ao usuário.
+
+O worker roda no mesmo processo Go da API. Ele:
+
+- consome jobs de Redis Streams com consumer group
+- recupera jobs pendentes via `XAUTOCLAIM`
+- usa lock por chat para evitar processamento paralelo do mesmo chat
+- reconstrói o histórico autoritativo a partir do MongoDB
+- executa extração, classificação, persistência da análise e atualização dos resumos diário/semanal
+- grava falhas terminais em `analysis_dead_letters`
+
+Por causa disso, os endpoints de dashboard (`/dashboard/week` e `/dashboard/timeline`) são eventualmente consistentes. Logo após enviar uma mensagem, os dados de humor/eventos podem ainda não refletir a última conversa até o worker concluir o job.
 
 ## Rotas
 

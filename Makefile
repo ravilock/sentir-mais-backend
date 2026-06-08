@@ -8,6 +8,7 @@ SVC_BACKEND := backend
 SVC_FRONTEND := frontend
 SVC_DB := mongodb
 SVC_DB_UI := mongo-express
+SVC_REDIS := redis
 SVC_CLASSIFIER := classifier
 SVC_PROMPTER := prompter
 FRONTEND_API_URL ?= http://localhost:8001/api/v1
@@ -51,8 +52,8 @@ rebuild-frontend: ## Rebuild the frontend image using FRONTEND_API_URL
 	@FRONTEND_API_URL=$(FRONTEND_API_URL) $(DOCKER_COMPOSE) build $(SVC_FRONTEND)
 
 .PHONY: run-db
-run-db: ## Start MongoDB, Mongo Express
-	@$(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
+run-db: ## Start MongoDB, Redis, Mongo Express, classifier, and prompter
+	@$(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_REDIS) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
 
 .PHONY: run-classifier
 run-classifier: ## Start the classifier service
@@ -72,11 +73,11 @@ stop-ollama-host: ## Unload the local Ollama model from the running host daemon
 
 .PHONY: run-db-gpu
 run-db-gpu: ## Start local dependencies with the published NVIDIA GPU classifier image
-	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest-gpu $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
+	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest-gpu $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_REDIS) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
 
 .PHONY: run-db-cpu
 run-db-cpu: ## Start local dependencies with the published CPU classifier image
-	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
+	@CLASSIFIER_IMAGE=ghcr.io/ravilock/sentir-mais-classifier:latest $(DOCKER_COMPOSE) up -d $(SVC_DB) $(SVC_REDIS) $(SVC_DB_UI) $(SVC_CLASSIFIER) $(SVC_PROMPTER)
 
 stop: stop-all ## Stop local dependencies
 
@@ -86,7 +87,11 @@ stop-all: ## Stop all docker-compose services
 
 .PHONY: stop-db
 stop-db: ## Stop MongoDB
-	@$(DOCKER_COMPOSE) stop $(SVC_DB)
+	@$(DOCKER_COMPOSE) stop $(SVC_DB) $(SVC_REDIS)
+
+.PHONY: stop-redis
+stop-redis: ## Stop Redis
+	@$(DOCKER_COMPOSE) stop $(SVC_REDIS)
 
 .PHONY: stop-db-ui
 stop-db-ui: ## Stop Mongo Express
@@ -109,7 +114,11 @@ logs-api: ## Show API logs
 
 .PHONY: logs-db
 logs-db: ## Show MongoDB logs
-	@$(LOGS_CMD) $(SVC_DB)
+	@$(LOGS_CMD) $(SVC_DB) $(SVC_REDIS)
+
+.PHONY: logs-redis
+logs-redis: ## Show Redis logs
+	@$(LOGS_CMD) $(SVC_REDIS)
 
 .PHONY: logs-db-ui
 logs-db-ui: ## Show Mongo Express logs

@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -13,6 +15,10 @@ import (
 )
 
 const classifierInputText = "What happened: The user argued with their manager at work.\nUser felt: anxious\nUser reaction: The user became defensive.\nExpected outcome or self-expectation: The user expected more respect."
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stdout, nil))
+}
 
 func TestProcessorProcess(t *testing.T) {
 	t.Run("should reload history and persist classifier and extraction result", func(t *testing.T) {
@@ -40,6 +46,7 @@ func TestProcessorProcess(t *testing.T) {
 			analyses,
 			summaries,
 			stubClock{now: messageCreatedAt.Add(time.Hour)},
+			testLogger(),
 		)
 		processor.sleep = noSleep
 
@@ -79,6 +86,7 @@ func TestProcessorProcess(t *testing.T) {
 			&capturingAnalysisCreator{},
 			nil,
 			nil,
+			testLogger(),
 		)
 		processor.sleep = noSleep
 
@@ -100,6 +108,7 @@ func TestProcessorProcess(t *testing.T) {
 			analyses,
 			&capturingSummaryWriter{},
 			nil,
+			testLogger(),
 		)
 
 		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
@@ -124,7 +133,7 @@ func TestProcessorProcess(t *testing.T) {
 			ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
 		}}
 		analyses := &capturingAnalysisCreator{}
-		processor := NewProcessor(stubHistoryLister{messages: history}, extractor, classifier, analyses, nil, nil)
+		processor := NewProcessor(stubHistoryLister{messages: history}, extractor, classifier, analyses, nil, nil, testLogger())
 		processor.sleep = noSleep
 
 		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
@@ -151,7 +160,7 @@ func TestProcessorProcess(t *testing.T) {
 		}
 		classifier := &countingClassifier{err: expectedErr}
 		deadLetters := &capturingDeadLetterCreator{}
-		processor := NewProcessorWithDeadLetters(stubHistoryLister{messages: history}, nil, classifier, &capturingAnalysisCreator{}, nil, deadLetters, stubClock{now: messageCreatedAt.Add(time.Hour)})
+		processor := NewProcessorWithDeadLetters(stubHistoryLister{messages: history}, nil, classifier, &capturingAnalysisCreator{}, nil, deadLetters, stubClock{now: messageCreatedAt.Add(time.Hour)}, testLogger())
 		processor.sleep = noSleep
 
 		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
@@ -190,6 +199,7 @@ func TestProcessorProcess(t *testing.T) {
 			summaries,
 			deadLetters,
 			stubClock{now: messageCreatedAt.Add(time.Hour)},
+			testLogger(),
 		)
 		processor.sleep = noSleep
 

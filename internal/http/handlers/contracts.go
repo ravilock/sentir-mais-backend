@@ -32,5 +32,5 @@ type messagesLister interface {
 }
 
 type weeklySummaryGetter interface {
-	GetWeek(ctx context.Context, userID string) domain.WeeklySummary
+	GetWeek(ctx context.Context, userID string) (domain.WeeklySummary, error)
 }

@@ -111,7 +111,7 @@ func NewServer(cfg config.Config) (Server, error) {
 	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor).WithSummaries(summaryWriter)
 	listChatsService := chatservices.NewListChatsService(chatRepository, messageRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
-	dashboardService := dashboardservices.NewGetWeekService()
+	dashboardService := dashboardservices.NewGetWeekService(weeklySummaryRepository)
 
 	srv := &server{
 		logger:           logger,

@@ -23,7 +23,7 @@ func (_m *mockWeeklySummaryGetter) EXPECT() *mockWeeklySummaryGetter_Expecter {
 }
 
 // GetWeek provides a mock function with given fields: ctx, userID
-func (_m *mockWeeklySummaryGetter) GetWeek(ctx context.Context, userID string) domain.WeeklySummary {
+func (_m *mockWeeklySummaryGetter) GetWeek(ctx context.Context, userID string) (domain.WeeklySummary, error) {
 	ret := _m.Called(ctx, userID)
 
 	if len(ret) == 0 {
@@ -31,13 +31,23 @@ func (_m *mockWeeklySummaryGetter) GetWeek(ctx context.Context, userID string) d
 	}
 
 	var r0 domain.WeeklySummary
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (domain.WeeklySummary, error)); ok {
+		return rf(ctx, userID)
+	}
 	if rf, ok := ret.Get(0).(func(context.Context, string) domain.WeeklySummary); ok {
 		r0 = rf(ctx, userID)
 	} else {
 		r0 = ret.Get(0).(domain.WeeklySummary)
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // mockWeeklySummaryGetter_GetWeek_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetWeek'
@@ -59,12 +69,12 @@ func (_c *mockWeeklySummaryGetter_GetWeek_Call) Run(run func(ctx context.Context
 	return _c
 }
 
-func (_c *mockWeeklySummaryGetter_GetWeek_Call) Return(_a0 domain.WeeklySummary) *mockWeeklySummaryGetter_GetWeek_Call {
-	_c.Call.Return(_a0)
+func (_c *mockWeeklySummaryGetter_GetWeek_Call) Return(_a0 domain.WeeklySummary, _a1 error) *mockWeeklySummaryGetter_GetWeek_Call {
+	_c.Call.Return(_a0, _a1)
 	return _c
 }
 
-func (_c *mockWeeklySummaryGetter_GetWeek_Call) RunAndReturn(run func(context.Context, string) domain.WeeklySummary) *mockWeeklySummaryGetter_GetWeek_Call {
+func (_c *mockWeeklySummaryGetter_GetWeek_Call) RunAndReturn(run func(context.Context, string) (domain.WeeklySummary, error)) *mockWeeklySummaryGetter_GetWeek_Call {
 	_c.Call.Return(run)
 	return _c
 }

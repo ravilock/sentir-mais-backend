@@ -25,7 +25,13 @@ func (h *DashboardHandler) GetWeek(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary := h.service.GetWeek(r.Context(), user.ID)
+	summary, err := h.service.GetWeek(r.Context(), user.ID)
+	if err != nil {
+		logRequestError(h.logger, r, http.StatusInternalServerError, "get dashboard week request failed", err)
+		respondError(w, http.StatusInternalServerError, "failed to load weekly dashboard")
+		return
+	}
+
 	response := apiresponses.WeeklySummaryResponse{
 		WeekStart:        summary.WeekStart,
 		DominantFeelings: make([]apiresponses.FeelingScoreResponse, 0, len(summary.DominantFeelings)),

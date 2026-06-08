@@ -14,6 +14,9 @@ type Config struct {
 	CORSAllowedOrigins []string
 	MongoURI           string
 	MongoDatabase      string
+	RedisAddr          string
+	RedisPassword      string
+	AnalysisQueueName  string
 	PrompterBaseURL    string
 	PrompterAPIKey     string
 	PrompterTimeout    time.Duration
@@ -30,6 +33,9 @@ func Load() Config {
 		CORSAllowedOrigins: getCSVEnv("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000", "http://localhost:5173", "http://localhost:4000"}),
 		MongoURI:           getEnv("MONGO_URI", "mongodb://localhost:27017"),
 		MongoDatabase:      getEnv("MONGO_DATABASE", "sentir-mais"),
+		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
+		AnalysisQueueName:  getEnv("ANALYSIS_QUEUE_NAME", "analysis-jobs"),
 		PrompterBaseURL:    getEnv("PROMPTER_BASE_URL", ""),
 		PrompterAPIKey:     getEnv("PROMPTER_API_KEY", ""),
 		PrompterTimeout:    getDurationSeconds("PROMPTER_TIMEOUT_SECONDS", 10),
@@ -45,6 +51,20 @@ func getEnv(key, fallback string) string {
 	}
 
 	return fallback
+}
+
+func getInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+
+	return value
 }
 
 func getDurationSeconds(key string, fallbackSeconds int) time.Duration {

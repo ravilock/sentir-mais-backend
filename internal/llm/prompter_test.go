@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -271,6 +272,6 @@ func newTestPrompterClient() *PrompterClient {
 		"http://prompter.test",
 		"test-key",
 		time.Second,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	)
 }

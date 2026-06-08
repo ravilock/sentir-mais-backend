@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +24,7 @@ type Client struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	logger     *slog.Logger
 }
 
 type classifyRequest struct {
@@ -44,13 +45,14 @@ type classifyResponse struct {
 	ModelName         string                 `json:"model_name"`
 }
 
-func NewClient(baseURL, apiKey string, timeout time.Duration) *Client {
+func NewClient(baseURL, apiKey string, timeout time.Duration, logger *slog.Logger) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
+		logger: logger.With("component", ProviderName),
 	}
 }
 
@@ -88,7 +90,7 @@ func (c *Client) Classify(ctx context.Context, text string) (domain.Classificati
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			log.Printf("Failed to close %s response body: %s\n", ProviderName, err.Error())
+			c.logger.WarnContext(ctx, "failed to close classifier response body", "error", err)
 		}
 	}()
 
@@ -100,6 +102,8 @@ func (c *Client) Classify(ctx context.Context, text string) (domain.Classificati
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		return domain.ClassificationResult{}, fmt.Errorf("decode classify response: %w", err)
 	}
+
+	c.logger.DebugContext(ctx, "classifier response received", "model", payload.ModelName, "primary_feeling", payload.PrimaryFeeling.Label)
 
 	return domain.ClassificationResult{
 		PrimaryFeeling:    toFeelingScore(payload.PrimaryFeeling),

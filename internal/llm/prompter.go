@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -186,7 +185,7 @@ func (c *PrompterClient) GenerateReply(ctx context.Context, history []domain.Mes
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			log.Printf("Failed to close prompter response body: %s\n", err.Error())
+			c.logger.WarnContext(ctx, "failed to close prompter response body", "error", err)
 		}
 	}()
 
@@ -256,7 +255,7 @@ func (c *PrompterClient) doGenerate(ctx context.Context, body []byte) (generateR
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			log.Printf("Failed to close prompter response body: %s\n", err.Error())
+			c.logger.WarnContext(ctx, "failed to close prompter response body", "error", err)
 		}
 	}()
 

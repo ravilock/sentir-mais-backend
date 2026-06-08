@@ -31,7 +31,7 @@ func (s handlerAuthStub) Authenticate(_ context.Context, _ string) (domain.User,
 func TestAuthHandler_Register(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
 	registerer := newMockRegisterer(t)
-	handler := NewAuthHandler(nil, registerer, newMockLoginer(t))
+	handler := NewAuthHandler(newTestHTTPLogger(), registerer, newMockLoginer(t))
 
 	t.Run("should register user", func(t *testing.T) {
 		requestBody := []byte(`{"email":"user@test.com","password":"very-secure-password"}`)
@@ -90,7 +90,7 @@ func TestAuthHandler_Register(t *testing.T) {
 func TestAuthHandler_Login(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
 	loginer := newMockLoginer(t)
-	handler := NewAuthHandler(nil, newMockRegisterer(t), loginer)
+	handler := NewAuthHandler(newTestHTTPLogger(), newMockRegisterer(t), loginer)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader([]byte(`{"email":"user@test.com","password":"very-secure-password"}`)))
 	rec := httptest.NewRecorder()
@@ -111,7 +111,7 @@ func TestAuthHandler_Login(t *testing.T) {
 
 func TestAuthHandler_LoginValidation(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
-	handler := NewAuthHandler(nil, newMockRegisterer(t), newMockLoginer(t))
+	handler := NewAuthHandler(newTestHTTPLogger(), newMockRegisterer(t), newMockLoginer(t))
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader([]byte(`{"email":"   ","password":"123"}`)))
 	rec := httptest.NewRecorder()
 
@@ -122,7 +122,7 @@ func TestAuthHandler_LoginValidation(t *testing.T) {
 }
 
 func TestAuthHandler_Me(t *testing.T) {
-	handler := NewAuthHandler(nil, newMockRegisterer(t), newMockLoginer(t))
+	handler := NewAuthHandler(newTestHTTPLogger(), newMockRegisterer(t), newMockLoginer(t))
 
 	t.Run("should return authenticated user", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)

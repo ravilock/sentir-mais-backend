@@ -3,7 +3,9 @@ package classifier
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +44,7 @@ func TestClientClassifySendsAPIKey(t *testing.T) {
 		}, nil
 	})
 
-	client := NewClient("http://classifier.test", "test-api-key", time.Second)
+	client := NewClient("http://classifier.test", "test-api-key", time.Second, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 	client.httpClient.Transport = transport
 
 	result, err := client.Classify(context.Background(), "hello world")

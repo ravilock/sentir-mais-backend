@@ -1,7 +1,7 @@
 package requests
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -10,7 +10,8 @@ import (
 
 func TestMain(m *testing.M) {
 	if err := validations.InitValidator(); err != nil {
-		log.Fatalln("Failed to load validator", err)
+		slog.New(slog.NewTextHandler(os.Stdout, nil)).Error("failed to load validator", "error", err)
+		os.Exit(1)
 	}
 
 	code := m.Run()

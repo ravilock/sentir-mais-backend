@@ -18,21 +18,21 @@ type timelinePointDocument struct {
 }
 
 type dailySummaryDocument struct {
-	UserID           string                `bson:"user_id"`
-	DayStart         time.Time             `bson:"day_start"`
-	DominantFeelings []feelingScoreDocument `bson:"dominant_feelings"`
-	MainEvents       []string              `bson:"main_events"`
+	UserID           string                  `bson:"user_id"`
+	DayStart         time.Time               `bson:"day_start"`
+	DominantFeelings []feelingScoreDocument  `bson:"dominant_feelings"`
+	MainEvents       []string                `bson:"main_events"`
 	TimelinePoints   []timelinePointDocument `bson:"timeline_points"`
-	GeneratedAt      time.Time             `bson:"generated_at"`
+	GeneratedAt      time.Time               `bson:"generated_at"`
 }
 
 type weeklySummaryDocument struct {
-	UserID           string                `bson:"user_id"`
-	WeekStart        time.Time             `bson:"week_start"`
-	DominantFeelings []feelingScoreDocument `bson:"dominant_feelings"`
-	MainEvents       []string              `bson:"main_events"`
+	UserID           string                  `bson:"user_id"`
+	WeekStart        time.Time               `bson:"week_start"`
+	DominantFeelings []feelingScoreDocument  `bson:"dominant_feelings"`
+	MainEvents       []string                `bson:"main_events"`
 	TimelinePoints   []timelinePointDocument `bson:"timeline_points"`
-	GeneratedAt      time.Time             `bson:"generated_at"`
+	GeneratedAt      time.Time               `bson:"generated_at"`
 }
 
 type DailySummaryRepository struct {
@@ -90,6 +90,36 @@ func (r *DailySummaryRepository) FindByUserAndDay(ctx context.Context, userID st
 	}
 
 	return document.toDomain(), nil
+}
+
+func (r *DailySummaryRepository) ListByUserAndDayRange(ctx context.Context, userID string, from, to time.Time) ([]domain.DailySummary, error) {
+	cursor, err := r.collection.Find(ctx, bson.M{
+		"user_id": userID,
+		"day_start": bson.M{
+			"$gte": from.UTC(),
+			"$lte": to.UTC(),
+		},
+	}, options.Find().SetSort(bson.D{{Key: "day_start", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	summaries := make([]domain.DailySummary, 0)
+	for cursor.Next(ctx) {
+		var document dailySummaryDocument
+		if err := cursor.Decode(&document); err != nil {
+			return nil, err
+		}
+
+		summaries = append(summaries, document.toDomain())
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+
+	return summaries, nil
 }
 
 func (r *DailySummaryRepository) ensureIndexes(ctx context.Context) error {

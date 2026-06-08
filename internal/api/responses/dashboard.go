@@ -20,3 +20,17 @@ type WeeklySummaryResponse struct {
 	TimelinePoints   []TimelinePointResponse `json:"timelinePoints"`
 	GeneratedAt      time.Time               `json:"generatedAt"`
 }
+
+type DailySummaryResponse struct {
+	DayStart         time.Time               `json:"dayStart"`
+	DominantFeelings []FeelingScoreResponse  `json:"dominantFeelings"`
+	MainEvents       []string                `json:"mainEvents"`
+	TimelinePoints   []TimelinePointResponse `json:"timelinePoints"`
+	GeneratedAt      time.Time               `json:"generatedAt"`
+}
+
+type DashboardTimelineResponse struct {
+	From string                 `json:"from"`
+	To   string                 `json:"to"`
+	Days []DailySummaryResponse `json:"days"`
+}

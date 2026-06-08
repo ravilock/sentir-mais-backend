@@ -174,6 +174,39 @@ paths:
                 $ref: '#/components/schemas/WeeklySummary'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /dashboard/timeline:
+    get:
+      tags: [Dashboard]
+      summary: Get the authenticated user's daily dashboard timeline
+      operationId: getDashboardTimeline
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Start day in YYYY-MM-DD. Must be provided together with `to`.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: End day in YYYY-MM-DD. Must be provided together with `from`.
+      responses:
+        '200':
+          description: Daily dashboard timeline for the selected range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTimeline'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
 components:
   securitySchemes:
     bearerAuth:
@@ -196,6 +229,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnprocessableEntity:
+      description: The request is semantically invalid.
       content:
         application/json:
           schema:
@@ -352,6 +391,44 @@ components:
         generatedAt:
           type: string
           format: date-time
+    DailySummary:
+      type: object
+      additionalProperties: false
+      required: [dayStart, dominantFeelings, mainEvents, timelinePoints, generatedAt]
+      properties:
+        dayStart:
+          type: string
+          format: date-time
+        dominantFeelings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeelingScore'
+        mainEvents:
+          type: array
+          items:
+            type: string
+        timelinePoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelinePoint'
+        generatedAt:
+          type: string
+          format: date-time
+    DashboardTimeline:
+      type: object
+      additionalProperties: false
+      required: [from, to, days]
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailySummary'
     FeelingScore:
       type: object
       additionalProperties: false

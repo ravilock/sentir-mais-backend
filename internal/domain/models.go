@@ -131,3 +131,9 @@ type WeeklySummary struct {
 	TimelinePoints   []TimelinePoint
 	GeneratedAt      time.Time
 }
+
+type DashboardTimeline struct {
+	From time.Time
+	To   time.Time
+	Days []DailySummary
+}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/ravilock/sentir-mais-backend/internal/auth"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
@@ -33,4 +34,8 @@ type messagesLister interface {
 
 type weeklySummaryGetter interface {
 	GetWeek(ctx context.Context, userID string) (domain.WeeklySummary, error)
+}
+
+type timelineSummaryGetter interface {
+	GetTimeline(ctx context.Context, userID string, from, to *time.Time) (domain.DashboardTimeline, error)
 }

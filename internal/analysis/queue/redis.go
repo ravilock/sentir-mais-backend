@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -14,11 +15,13 @@ const defaultConsumeTimeout = 5 * time.Second
 
 type RedisQueue struct {
 	client        redis.Cmdable
-	readyKey      string
-	processingKey string
+	streamKey     string
+	groupName     string
+	consumerName  string
 	delayedKey    string
 	deadLetterKey string
 	lockKeyPrefix string
+	claimMinIdle  time.Duration
 }
 
 func NewRedisQueue(client redis.Cmdable, name string) (*RedisQueue, error) {
@@ -29,13 +32,16 @@ func NewRedisQueue(client redis.Cmdable, name string) (*RedisQueue, error) {
 		return nil, errors.New("queue name is required")
 	}
 
+	streamKey := fmt.Sprintf("stream:%s", name)
 	return &RedisQueue{
 		client:        client,
-		readyKey:      fmt.Sprintf("queue:%s:ready", name),
-		processingKey: fmt.Sprintf("queue:%s:processing", name),
-		delayedKey:    fmt.Sprintf("queue:%s:delayed", name),
-		deadLetterKey: fmt.Sprintf("queue:%s:dead-letter", name),
-		lockKeyPrefix: fmt.Sprintf("queue:%s:chat-lock:", name),
+		streamKey:     streamKey,
+		groupName:     fmt.Sprintf("%s-group", name),
+		consumerName:  fmt.Sprintf("%s-consumer", name),
+		delayedKey:    fmt.Sprintf("stream:%s:delayed", name),
+		deadLetterKey: fmt.Sprintf("stream:%s:dead-letter", name),
+		lockKeyPrefix: fmt.Sprintf("stream:%s:chat-lock:", name),
+		claimMinIdle:  time.Minute,
 	}, nil
 }
 
@@ -53,7 +59,16 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job AnalysisJob) error {
 		return err
 	}
 
-	return q.client.LPush(ctx, q.readyKey, payload).Err()
+	if err := q.ensureGroup(ctx); err != nil {
+		return err
+	}
+
+	return q.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: q.streamKey,
+		Values: map[string]interface{}{
+			"payload": payload,
+		},
+	}).Err()
 }
 
 func (q *RedisQueue) Consume(ctx context.Context, timeout time.Duration) (ConsumedJob, error) {
@@ -61,7 +76,25 @@ func (q *RedisQueue) Consume(ctx context.Context, timeout time.Duration) (Consum
 		timeout = defaultConsumeTimeout
 	}
 
-	payload, err := q.client.BRPopLPush(ctx, q.readyKey, q.processingKey, timeout).Result()
+	if err := q.ensureGroup(ctx); err != nil {
+		return ConsumedJob{}, err
+	}
+
+	reclaimed, err := q.reclaimStale(ctx)
+	if err != nil {
+		return ConsumedJob{}, err
+	}
+	if len(reclaimed) > 0 {
+		return consumedFromMessage(reclaimed[0])
+	}
+
+	streams, err := q.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    q.groupName,
+		Consumer: q.consumerName,
+		Streams:  []string{q.streamKey, ">"},
+		Count:    1,
+		Block:    timeout,
+	}).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return ConsumedJob{}, ErrNoJob
@@ -69,26 +102,28 @@ func (q *RedisQueue) Consume(ctx context.Context, timeout time.Duration) (Consum
 
 		return ConsumedJob{}, err
 	}
-
-	job, err := decodeJob(payload)
-	if err != nil {
-		return ConsumedJob{}, err
+	if len(streams) == 0 || len(streams[0].Messages) == 0 {
+		return ConsumedJob{}, ErrNoJob
 	}
 
-	return ConsumedJob{Job: job, raw: payload}, nil
+	return consumedFromMessage(streams[0].Messages[0])
 }
 
 func (q *RedisQueue) Ack(ctx context.Context, consumed ConsumedJob) error {
-	if consumed.raw == "" {
-		return errors.New("consumed job payload is required")
+	if consumed.streamID == "" {
+		return errors.New("consumed stream id is required")
 	}
 
-	return q.client.LRem(ctx, q.processingKey, 1, consumed.raw).Err()
+	pipe := q.client.TxPipeline()
+	pipe.XAck(ctx, q.streamKey, q.groupName, consumed.streamID)
+	pipe.XDel(ctx, q.streamKey, consumed.streamID)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (q *RedisQueue) RetryLater(ctx context.Context, consumed ConsumedJob, runAt time.Time) error {
-	if consumed.raw == "" {
-		return errors.New("consumed job payload is required")
+	if consumed.streamID == "" {
+		return errors.New("consumed stream id is required")
 	}
 
 	job := consumed.Job
@@ -99,7 +134,8 @@ func (q *RedisQueue) RetryLater(ctx context.Context, consumed ConsumedJob, runAt
 	}
 
 	pipe := q.client.TxPipeline()
-	pipe.LRem(ctx, q.processingKey, 1, consumed.raw)
+	pipe.XAck(ctx, q.streamKey, q.groupName, consumed.streamID)
+	pipe.XDel(ctx, q.streamKey, consumed.streamID)
 	pipe.ZAdd(ctx, q.delayedKey, redis.Z{
 		Score:  float64(runAt.UnixMilli()),
 		Member: payload,
@@ -109,12 +145,13 @@ func (q *RedisQueue) RetryLater(ctx context.Context, consumed ConsumedJob, runAt
 }
 
 func (q *RedisQueue) DeadLetter(ctx context.Context, consumed ConsumedJob) error {
-	if consumed.raw == "" {
-		return errors.New("consumed job payload is required")
+	if consumed.streamID == "" {
+		return errors.New("consumed stream id is required")
 	}
 
 	pipe := q.client.TxPipeline()
-	pipe.LRem(ctx, q.processingKey, 1, consumed.raw)
+	pipe.XAck(ctx, q.streamKey, q.groupName, consumed.streamID)
+	pipe.XDel(ctx, q.streamKey, consumed.streamID)
 	pipe.LPush(ctx, q.deadLetterKey, consumed.raw)
 	_, err := pipe.Exec(ctx)
 	return err
@@ -168,7 +205,12 @@ func (q *RedisQueue) MoveDueRetries(ctx context.Context, now time.Time, limit in
 	pipe := q.client.TxPipeline()
 	for _, payload := range payloads {
 		pipe.ZRem(ctx, q.delayedKey, payload)
-		pipe.LPush(ctx, q.readyKey, payload)
+		pipe.XAdd(ctx, &redis.XAddArgs{
+			Stream: q.streamKey,
+			Values: map[string]interface{}{
+				"payload": payload,
+			},
+		})
 	}
 
 	_, err = pipe.Exec(ctx)
@@ -181,6 +223,49 @@ func (q *RedisQueue) MoveDueRetries(ctx context.Context, now time.Time, limit in
 
 func (q *RedisQueue) chatLockKey(chatID string) string {
 	return q.lockKeyPrefix + chatID
+}
+
+func (q *RedisQueue) ensureGroup(ctx context.Context) error {
+	err := q.client.XGroupCreateMkStream(ctx, q.streamKey, q.groupName, "0").Err()
+	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		return err
+	}
+
+	return nil
+}
+
+func (q *RedisQueue) reclaimStale(ctx context.Context) ([]redis.XMessage, error) {
+	messages, _, err := q.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   q.streamKey,
+		Group:    q.groupName,
+		Consumer: q.consumerName,
+		MinIdle:  q.claimMinIdle,
+		Start:    "0-0",
+		Count:    1,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return messages, nil
+}
+
+func consumedFromMessage(message redis.XMessage) (ConsumedJob, error) {
+	raw, ok := message.Values["payload"].(string)
+	if !ok || raw == "" {
+		return ConsumedJob{}, errors.New("stream message payload is required")
+	}
+
+	job, err := decodeJob(raw)
+	if err != nil {
+		return ConsumedJob{}, err
+	}
+
+	return ConsumedJob{Job: job, raw: raw, streamID: message.ID}, nil
 }
 
 var ErrNoJob = errors.New("no analysis job available")

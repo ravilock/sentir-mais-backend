@@ -22,6 +22,7 @@ type AnalysisJob struct {
 }
 
 type ConsumedJob struct {
-	Job AnalysisJob
-	raw string
+	Job      AnalysisJob
+	raw      string
+	streamID string
 }

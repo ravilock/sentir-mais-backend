@@ -27,10 +27,10 @@ func TestRedisQueueEnqueueConsumeAck(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, job, consumed.Job)
 	require.NotEmpty(t, consumed.raw)
-	require.Equal(t, int64(1), client.LLen(ctx, queue.processingKey).Val())
+	require.NotEmpty(t, consumed.streamID)
 
 	require.NoError(t, queue.Ack(ctx, consumed))
-	require.Equal(t, int64(0), client.LLen(ctx, queue.processingKey).Val())
+	require.Equal(t, int64(0), client.XLen(ctx, queue.streamKey).Val())
 }
 
 func TestRedisQueueRetryLaterAndMoveDueRetries(t *testing.T) {
@@ -50,18 +50,18 @@ func TestRedisQueueRetryLaterAndMoveDueRetries(t *testing.T) {
 
 	runAt := time.Date(2026, time.June, 8, 12, 0, 5, 0, time.UTC)
 	require.NoError(t, queue.RetryLater(ctx, consumed, runAt))
-	require.Equal(t, int64(0), client.LLen(ctx, queue.processingKey).Val())
+	require.Equal(t, int64(0), client.XLen(ctx, queue.streamKey).Val())
 	require.Equal(t, int64(1), client.ZCard(ctx, queue.delayedKey).Val())
 
 	moved, err := queue.MoveDueRetries(ctx, runAt.Add(-time.Millisecond), 100)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), moved)
-	require.Equal(t, int64(0), client.LLen(ctx, queue.readyKey).Val())
+	require.Equal(t, int64(0), client.XLen(ctx, queue.streamKey).Val())
 
 	moved, err = queue.MoveDueRetries(ctx, runAt, 100)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), moved)
-	require.Equal(t, int64(1), client.LLen(ctx, queue.readyKey).Val())
+	require.Equal(t, int64(1), client.XLen(ctx, queue.streamKey).Val())
 
 	consumedAgain, err := queue.Consume(ctx, time.Millisecond)
 	require.NoError(t, err)
@@ -83,8 +83,36 @@ func TestRedisQueueDeadLetter(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, queue.DeadLetter(ctx, consumed))
-	require.Equal(t, int64(0), client.LLen(ctx, queue.processingKey).Val())
+	require.Equal(t, int64(0), client.XLen(ctx, queue.streamKey).Val())
 	require.Equal(t, int64(1), client.LLen(ctx, queue.deadLetterKey).Val())
+}
+
+func TestRedisQueueReclaimsStalePendingJob(t *testing.T) {
+	ctx := context.Background()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+	queue, err := NewRedisQueue(client, "analysis-test")
+	require.NoError(t, err)
+	queue.claimMinIdle = time.Millisecond
+
+	job := testAnalysisJob()
+	require.NoError(t, queue.Enqueue(ctx, job))
+
+	consumed, err := queue.Consume(ctx, time.Millisecond)
+	require.NoError(t, err)
+	require.Equal(t, job, consumed.Job)
+
+	time.Sleep(2 * time.Millisecond)
+
+	reclaimed, err := queue.Consume(ctx, time.Millisecond)
+	require.NoError(t, err)
+	require.Equal(t, consumed.streamID, reclaimed.streamID)
+	require.Equal(t, job, reclaimed.Job)
+
+	require.NoError(t, queue.Ack(ctx, reclaimed))
+	require.Equal(t, int64(0), client.XLen(ctx, queue.streamKey).Val())
 }
 
 func TestRedisQueueChatLock(t *testing.T) {

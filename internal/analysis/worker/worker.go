@@ -8,6 +8,8 @@ import (
 
 	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
 	analysisservices "github.com/ravilock/sentir-mais-backend/internal/analysis/services"
+	"github.com/ravilock/sentir-mais-backend/internal/domain"
+	"github.com/ravilock/sentir-mais-backend/internal/id"
 )
 
 const (
@@ -16,12 +18,14 @@ const (
 	defaultLockRetryDelay = time.Second
 	defaultChatLockTTL    = 15 * time.Minute
 	defaultRetryLimit     = int64(100)
+	defaultMaxAttempts    = 10
 )
 
 type Queue interface {
 	Consume(ctx context.Context, timeout time.Duration) (analysisqueue.ConsumedJob, error)
 	Ack(ctx context.Context, consumed analysisqueue.ConsumedJob) error
 	RetryLater(ctx context.Context, consumed analysisqueue.ConsumedJob, runAt time.Time) error
+	DeadLetter(ctx context.Context, consumed analysisqueue.ConsumedJob) error
 	MoveDueRetries(ctx context.Context, now time.Time, limit int64) (int64, error)
 	AcquireChatLock(ctx context.Context, chatID, owner string, ttl time.Duration) (bool, error)
 	ReleaseChatLock(ctx context.Context, chatID, owner string) error
@@ -31,6 +35,10 @@ type Processor interface {
 	Process(ctx context.Context, job analysisqueue.AnalysisJob) error
 }
 
+type DeadLetterCreator interface {
+	Create(ctx context.Context, deadLetter domain.AnalysisDeadLetter) error
+}
+
 type Clock interface {
 	Now() time.Time
 }
@@ -38,6 +46,7 @@ type Clock interface {
 type Worker struct {
 	queue          Queue
 	processor      Processor
+	deadLetters    DeadLetterCreator
 	logger         *slog.Logger
 	clock          Clock
 	consumeTimeout time.Duration
@@ -45,9 +54,10 @@ type Worker struct {
 	lockRetryDelay time.Duration
 	chatLockTTL    time.Duration
 	retryLimit     int64
+	maxAttempts    int
 }
 
-func NewWorker(queue Queue, processor Processor, logger *slog.Logger) *Worker {
+func NewWorker(queue Queue, processor Processor, deadLetters DeadLetterCreator, logger *slog.Logger) *Worker {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -55,6 +65,7 @@ func NewWorker(queue Queue, processor Processor, logger *slog.Logger) *Worker {
 	return &Worker{
 		queue:          queue,
 		processor:      processor,
+		deadLetters:    deadLetters,
 		logger:         logger,
 		clock:          realClock{},
 		consumeTimeout: defaultConsumeTimeout,
@@ -62,6 +73,7 @@ func NewWorker(queue Queue, processor Processor, logger *slog.Logger) *Worker {
 		lockRetryDelay: defaultLockRetryDelay,
 		chatLockTTL:    defaultChatLockTTL,
 		retryLimit:     defaultRetryLimit,
+		maxAttempts:    defaultMaxAttempts,
 	}
 }
 
@@ -113,15 +125,10 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	}
 	locked, err := w.queue.AcquireChatLock(ctx, consumed.Job.ChatID, lockOwner, w.chatLockTTL)
 	if err != nil {
-		retryAt := w.clock.Now().Add(w.lockRetryDelay)
-		if retryErr := w.queue.RetryLater(ctx, consumed, retryAt); retryErr != nil {
-			return false, errors.Join(err, retryErr)
-		}
-
-		return false, err
+		return false, w.retryOrDeadLetter(ctx, consumed, w.lockRetryDelay, err)
 	}
 	if !locked {
-		return false, w.queue.RetryLater(ctx, consumed, w.clock.Now().Add(w.lockRetryDelay))
+		return false, w.retryOrDeadLetter(ctx, consumed, w.lockRetryDelay, nil)
 	}
 	defer func() {
 		if err := w.queue.ReleaseChatLock(ctx, consumed.Job.ChatID, lockOwner); err != nil {
@@ -138,12 +145,7 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 			return true, nil
 		}
 
-		retryAt := w.clock.Now().Add(w.retryDelay)
-		if retryErr := w.queue.RetryLater(ctx, consumed, retryAt); retryErr != nil {
-			return false, errors.Join(err, retryErr)
-		}
-
-		return false, err
+		return false, w.retryOrDeadLetter(ctx, consumed, w.retryDelay, err)
 	}
 
 	if err := w.queue.Ack(ctx, consumed); err != nil {
@@ -151,6 +153,72 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (w *Worker) retryOrDeadLetter(ctx context.Context, consumed analysisqueue.ConsumedJob, delay time.Duration, cause error) error {
+	if consumed.Job.Attempt >= w.maxAttempts {
+		w.logger.ErrorContext(ctx, "analysis job max worker attempts exceeded",
+			"job_id", consumed.Job.JobID,
+			"chat_id", consumed.Job.ChatID,
+			"user_id", consumed.Job.UserID,
+			"message_id", consumed.Job.MessageID,
+			"attempt", consumed.Job.Attempt,
+			"error", cause,
+		)
+
+		if err := w.persistDeadLetter(ctx, consumed.Job, cause); err != nil {
+			if cause != nil {
+				return errors.Join(cause, err)
+			}
+			return err
+		}
+		if err := w.queue.DeadLetter(ctx, consumed); err != nil {
+			if cause != nil {
+				return errors.Join(cause, err)
+			}
+			return err
+		}
+		return cause
+	}
+
+	retryAt := w.clock.Now().Add(delay)
+	if err := w.queue.RetryLater(ctx, consumed, retryAt); err != nil {
+		if cause != nil {
+			return errors.Join(cause, err)
+		}
+		return err
+	}
+
+	return cause
+}
+
+func (w *Worker) persistDeadLetter(ctx context.Context, job analysisqueue.AnalysisJob, cause error) error {
+	if w.deadLetters == nil {
+		return nil
+	}
+
+	deadLetterID, err := id.New("adl")
+	if err != nil {
+		return err
+	}
+
+	errorMessage := "max worker attempts exceeded"
+	if cause != nil {
+		errorMessage = cause.Error()
+	}
+
+	return w.deadLetters.Create(ctx, domain.AnalysisDeadLetter{
+		ID:        deadLetterID,
+		JobID:     job.JobID,
+		ChatID:    job.ChatID,
+		UserID:    job.UserID,
+		MessageID: job.MessageID,
+		Stage:     string(job.Stage),
+		Reason:    "worker_max_attempts_exceeded",
+		Error:     errorMessage,
+		Attempt:   job.Attempt,
+		CreatedAt: w.clock.Now(),
+	})
 }
 
 type realClock struct{}

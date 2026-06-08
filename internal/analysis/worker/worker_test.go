@@ -10,6 +10,7 @@ import (
 
 	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
 	analysisservices "github.com/ravilock/sentir-mais-backend/internal/analysis/services"
+	"github.com/ravilock/sentir-mais-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +20,7 @@ func TestWorkerProcessOne(t *testing.T) {
 		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123"}
 		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockAcquired: true}
 		processor := &fakeProcessor{}
-		worker := NewWorker(queue, processor, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker := NewWorker(queue, processor, nil, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 		worker.clock = fakeClock{now: now}
 
 		processed, err := worker.ProcessOne(context.Background())
@@ -44,7 +45,7 @@ func TestWorkerProcessOne(t *testing.T) {
 		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123"}
 		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockAcquired: true}
 		processor := &fakeProcessor{err: expectedErr}
-		worker := NewWorker(queue, processor, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker := NewWorker(queue, processor, nil, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 		worker.clock = fakeClock{now: now}
 
 		processed, err := worker.ProcessOne(context.Background())
@@ -56,12 +57,37 @@ func TestWorkerProcessOne(t *testing.T) {
 		require.Equal(t, now.Add(30*time.Second), queue.retryAt)
 	})
 
+	t.Run("should dead letter when processing fails after max worker attempts", func(t *testing.T) {
+		expectedErr := errors.New("db unavailable")
+		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123", Attempt: 10}
+		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockAcquired: true}
+		processor := &fakeProcessor{err: expectedErr}
+		deadLetters := &fakeDeadLetterCreator{}
+		now := time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)
+		worker := NewWorker(queue, processor, deadLetters, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker.clock = fakeClock{now: now}
+
+		processed, err := worker.ProcessOne(context.Background())
+
+		require.ErrorIs(t, err, expectedErr)
+		require.False(t, processed)
+		require.Zero(t, queue.retryCount)
+		require.Equal(t, 1, queue.deadLetterCount)
+		require.Equal(t, 1, queue.releaseCount)
+		require.Len(t, deadLetters.created, 1)
+		require.Equal(t, "anj_123", deadLetters.created[0].JobID)
+		require.Equal(t, "worker_max_attempts_exceeded", deadLetters.created[0].Reason)
+		require.Equal(t, expectedErr.Error(), deadLetters.created[0].Error)
+		require.Equal(t, 10, deadLetters.created[0].Attempt)
+		require.Equal(t, now, deadLetters.created[0].CreatedAt)
+	})
+
 	t.Run("should delay job when chat lock is already held", func(t *testing.T) {
 		now := time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)
 		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123"}
 		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockAcquired: false}
 		processor := &fakeProcessor{}
-		worker := NewWorker(queue, processor, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker := NewWorker(queue, processor, nil, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 		worker.clock = fakeClock{now: now}
 
 		processed, err := worker.ProcessOne(context.Background())
@@ -74,13 +100,33 @@ func TestWorkerProcessOne(t *testing.T) {
 		require.Zero(t, queue.releaseCount)
 	})
 
+	t.Run("should dead letter when chat lock stays held after max worker attempts", func(t *testing.T) {
+		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123", Attempt: 10}
+		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockAcquired: false}
+		processor := &fakeProcessor{}
+		deadLetters := &fakeDeadLetterCreator{}
+		worker := NewWorker(queue, processor, deadLetters, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker.clock = fakeClock{now: time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)}
+
+		processed, err := worker.ProcessOne(context.Background())
+
+		require.NoError(t, err)
+		require.False(t, processed)
+		require.Empty(t, processor.jobs)
+		require.Zero(t, queue.retryCount)
+		require.Equal(t, 1, queue.deadLetterCount)
+		require.Zero(t, queue.releaseCount)
+		require.Len(t, deadLetters.created, 1)
+		require.Equal(t, "max worker attempts exceeded", deadLetters.created[0].Error)
+	})
+
 	t.Run("should requeue consumed job when chat lock acquisition errors", func(t *testing.T) {
 		now := time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)
 		expectedErr := errors.New("redis lock failed")
 		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123"}
 		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockErr: expectedErr}
 		processor := &fakeProcessor{}
-		worker := NewWorker(queue, processor, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker := NewWorker(queue, processor, nil, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 		worker.clock = fakeClock{now: now}
 
 		processed, err := worker.ProcessOne(context.Background())
@@ -98,7 +144,7 @@ func TestWorkerProcessOne(t *testing.T) {
 		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123"}
 		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockAcquired: true}
 		processor := &fakeProcessor{err: analysisservices.ErrDeadLettered}
-		worker := NewWorker(queue, processor, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker := NewWorker(queue, processor, nil, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 		worker.clock = fakeClock{now: time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)}
 
 		processed, err := worker.ProcessOne(context.Background())
@@ -111,20 +157,21 @@ func TestWorkerProcessOne(t *testing.T) {
 }
 
 type fakeQueue struct {
-	consumed       analysisqueue.ConsumedJob
-	consumeErr     error
-	consumeTimeout time.Duration
-	moveNow        time.Time
-	moveLimit      int64
-	ackCount       int
-	retryCount     int
-	retryAt        time.Time
-	lockAcquired   bool
-	lockChatID     string
-	lockOwner      string
-	lockTTL        time.Duration
-	lockErr        error
-	releaseCount   int
+	consumed        analysisqueue.ConsumedJob
+	consumeErr      error
+	consumeTimeout  time.Duration
+	moveNow         time.Time
+	moveLimit       int64
+	ackCount        int
+	retryCount      int
+	retryAt         time.Time
+	deadLetterCount int
+	lockAcquired    bool
+	lockChatID      string
+	lockOwner       string
+	lockTTL         time.Duration
+	lockErr         error
+	releaseCount    int
 }
 
 func (q *fakeQueue) Consume(_ context.Context, timeout time.Duration) (analysisqueue.ConsumedJob, error) {
@@ -144,6 +191,11 @@ func (q *fakeQueue) Ack(_ context.Context, _ analysisqueue.ConsumedJob) error {
 func (q *fakeQueue) RetryLater(_ context.Context, _ analysisqueue.ConsumedJob, runAt time.Time) error {
 	q.retryCount++
 	q.retryAt = runAt
+	return nil
+}
+
+func (q *fakeQueue) DeadLetter(_ context.Context, _ analysisqueue.ConsumedJob) error {
+	q.deadLetterCount++
 	return nil
 }
 
@@ -180,6 +232,20 @@ func (p *fakeProcessor) Process(_ context.Context, job analysisqueue.AnalysisJob
 	}
 
 	p.jobs = append(p.jobs, job)
+	return nil
+}
+
+type fakeDeadLetterCreator struct {
+	created []domain.AnalysisDeadLetter
+	err     error
+}
+
+func (c *fakeDeadLetterCreator) Create(_ context.Context, deadLetter domain.AnalysisDeadLetter) error {
+	if c.err != nil {
+		return c.err
+	}
+
+	c.created = append(c.created, deadLetter)
 	return nil
 }
 

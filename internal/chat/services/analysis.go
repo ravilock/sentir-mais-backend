@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ravilock/sentir-mais-backend/internal/classifier"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
@@ -47,11 +48,17 @@ func persistMessageAnalysis(
 	}
 
 	if classifierClient != nil && shouldProceedToClassifier(analysis, extractor != nil) {
-		result, err := classifierClient.Classify(ctx, message.Content)
+		classifierInputText := message.Content
+		if analysis.ExtractedEvent != nil {
+			classifierInputText = buildClassifierInputText(*analysis.ExtractedEvent)
+		}
+
+		result, err := classifierClient.Classify(ctx, classifierInputText)
 		if err != nil {
 			return err
 		}
 
+		analysis.ClassifierInputText = classifierInputText
 		analysis.PrimaryFeeling = result.PrimaryFeeling
 		analysis.SecondaryFeelings = result.SecondaryFeelings
 		analysis.AllScores = result.AllScores
@@ -78,4 +85,43 @@ func shouldProceedToClassifier(analysis domain.MessageAnalysis, hasExtractor boo
 	}
 
 	return determineNextAnalysisStep(analysis) == analysisNextStepProceedToNextStage
+}
+
+func buildClassifierInputText(event domain.ExtractedEvent) string {
+	lines := make([]string, 0, 4)
+
+	if value := strings.TrimSpace(event.WhatHappened); value != "" {
+		lines = append(lines, "What happened: "+value)
+	}
+
+	if len(event.FeltEmotionsDescribedByUser) > 0 {
+		emotions := compactClassifierStrings(event.FeltEmotionsDescribedByUser)
+		if len(emotions) > 0 {
+			lines = append(lines, "User felt: "+strings.Join(emotions, ", "))
+		}
+	}
+
+	if value := strings.TrimSpace(event.UserReaction); value != "" {
+		lines = append(lines, "User reaction: "+value)
+	}
+
+	if value := strings.TrimSpace(event.ExpectedOutcomeOrSelfExpectation); value != "" {
+		lines = append(lines, "Expected outcome or self-expectation: "+value)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func compactClassifierStrings(values []string) []string {
+	compacted := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+
+		compacted = append(compacted, trimmed)
+	}
+
+	return compacted
 }

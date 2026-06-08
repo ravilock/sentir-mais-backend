@@ -42,20 +42,21 @@ type extractedEventDocument struct {
 }
 
 type messageAnalysisDocument struct {
-	ID                 string                  `bson:"_id"`
-	MessageID          string                  `bson:"message_id"`
-	ChatID             string                  `bson:"chat_id"`
-	UserID             string                  `bson:"user_id"`
-	SourceText         string                  `bson:"source_text"`
-	PrimaryFeeling     feelingScoreDocument    `bson:"primary_feeling"`
-	SecondaryFeelings  []feelingScoreDocument  `bson:"secondary_feelings"`
-	AllScores          []feelingScoreDocument  `bson:"all_scores"`
-	EnoughContext      *bool                   `bson:"enough_context,omitempty"`
-	ContextGaps        []string                `bson:"context_gaps,omitempty"`
-	ExtractedEvent     *extractedEventDocument `bson:"extracted_event,omitempty"`
-	ClassifierProvider string                  `bson:"classifier_provider"`
-	ClassifierModel    string                  `bson:"classifier_model"`
-	CreatedAt          time.Time               `bson:"created_at"`
+	ID                  string                  `bson:"_id"`
+	MessageID           string                  `bson:"message_id"`
+	ChatID              string                  `bson:"chat_id"`
+	UserID              string                  `bson:"user_id"`
+	SourceText          string                  `bson:"source_text"`
+	ClassifierInputText string                  `bson:"classifier_input_text"`
+	PrimaryFeeling      feelingScoreDocument    `bson:"primary_feeling"`
+	SecondaryFeelings   []feelingScoreDocument  `bson:"secondary_feelings"`
+	AllScores           []feelingScoreDocument  `bson:"all_scores"`
+	EnoughContext       *bool                   `bson:"enough_context,omitempty"`
+	ContextGaps         []string                `bson:"context_gaps,omitempty"`
+	ExtractedEvent      *extractedEventDocument `bson:"extracted_event,omitempty"`
+	ClassifierProvider  string                  `bson:"classifier_provider"`
+	ClassifierModel     string                  `bson:"classifier_model"`
+	CreatedAt           time.Time               `bson:"created_at"`
 }
 
 func NewMessageAnalysisRepository(ctx context.Context, database *mongo.Database) (*MessageAnalysisRepository, error) {
@@ -69,20 +70,21 @@ func NewMessageAnalysisRepository(ctx context.Context, database *mongo.Database)
 
 func (r *MessageAnalysisRepository) Create(ctx context.Context, analysis domain.MessageAnalysis) error {
 	_, err := r.collection.InsertOne(ctx, messageAnalysisDocument{
-		ID:                 analysis.ID,
-		MessageID:          analysis.MessageID,
-		ChatID:             analysis.ChatID,
-		UserID:             analysis.UserID,
-		SourceText:         analysis.SourceText,
-		PrimaryFeeling:     toFeelingScoreDocument(analysis.PrimaryFeeling),
-		SecondaryFeelings:  toFeelingScoreDocuments(analysis.SecondaryFeelings),
-		AllScores:          toFeelingScoreDocuments(analysis.AllScores),
-		EnoughContext:      analysis.EnoughContext,
-		ContextGaps:        toContextGapStrings(analysis.ContextGaps),
-		ExtractedEvent:     toExtractedEventDocument(analysis.ExtractedEvent),
-		ClassifierProvider: analysis.ClassifierProvider,
-		ClassifierModel:    analysis.ClassifierModel,
-		CreatedAt:          analysis.CreatedAt.UTC(),
+		ID:                  analysis.ID,
+		MessageID:           analysis.MessageID,
+		ChatID:              analysis.ChatID,
+		UserID:              analysis.UserID,
+		SourceText:          analysis.SourceText,
+		ClassifierInputText: analysis.ClassifierInputText,
+		PrimaryFeeling:      toFeelingScoreDocument(analysis.PrimaryFeeling),
+		SecondaryFeelings:   toFeelingScoreDocuments(analysis.SecondaryFeelings),
+		AllScores:           toFeelingScoreDocuments(analysis.AllScores),
+		EnoughContext:       analysis.EnoughContext,
+		ContextGaps:         toContextGapStrings(analysis.ContextGaps),
+		ExtractedEvent:      toExtractedEventDocument(analysis.ExtractedEvent),
+		ClassifierProvider:  analysis.ClassifierProvider,
+		ClassifierModel:     analysis.ClassifierModel,
+		CreatedAt:           analysis.CreatedAt.UTC(),
 	})
 	return err
 }

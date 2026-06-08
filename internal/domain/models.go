@@ -83,20 +83,21 @@ type ClassificationResult struct {
 }
 
 type MessageAnalysis struct {
-	ID                 string
-	MessageID          string
-	ChatID             string
-	UserID             string
-	SourceText         string
-	PrimaryFeeling     FeelingScore
-	SecondaryFeelings  []FeelingScore
-	AllScores          []FeelingScore
-	EnoughContext      *bool
-	ContextGaps        []ContextGap
-	ExtractedEvent     *ExtractedEvent
-	ClassifierProvider string
-	ClassifierModel    string
-	CreatedAt          time.Time
+	ID                  string
+	MessageID           string
+	ChatID              string
+	UserID              string
+	SourceText          string
+	ClassifierInputText string
+	PrimaryFeeling      FeelingScore
+	SecondaryFeelings   []FeelingScore
+	AllScores           []FeelingScore
+	EnoughContext       *bool
+	ContextGaps         []ContextGap
+	ExtractedEvent      *ExtractedEvent
+	ClassifierProvider  string
+	ClassifierModel     string
+	CreatedAt           time.Time
 }
 
 type TimelinePoint struct {

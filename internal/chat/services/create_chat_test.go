@@ -73,4 +73,62 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 		require.NotEmpty(t, chatRecord.ID)
 		require.Equal(t, "assistant reply", response.Content)
 	})
+
+	t.Run("should classify from extracted context when extraction is sufficient", func(t *testing.T) {
+		chats := newMockChatCreator(t)
+		messages := newMockMessageCreator(t)
+		responder := newMockLlmResponder(t)
+		extractor := newMockLlmExtractor(t)
+		feelingClassifier := newMockFeelingClassifier(t)
+		analyses := newMockMessageAnalysisCreator(t)
+		clock := newMockClock(t)
+
+		now := time.Date(2026, time.May, 31, 14, 30, 0, 0, time.UTC)
+		service := NewCreateChatService(chats, messages, responder).WithAnalysis(feelingClassifier, analyses).WithExtraction(extractor)
+		service.clock = clock
+
+		clock.EXPECT().Now().Return(now).Twice()
+		responder.EXPECT().
+			GenerateReply(mock.Anything, mock.AnythingOfType("[]domain.Message")).
+			Return("assistant reply", nil).
+			Once()
+		chats.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.Chat")).
+			Return(nil).
+			Once()
+		messages.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.Message")).
+			Return(nil).
+			Twice()
+		extractor.EXPECT().
+			ExtractEvent(mock.Anything, mock.AnythingOfType("[]domain.Message")).
+			Return(domain.ExtractedEvent{
+				EnoughContext:                    true,
+				WhatHappened:                     "The user argued with their manager at work.",
+				FeltEmotionsDescribedByUser:      []string{"anxious"},
+				UserReaction:                     "The user became defensive.",
+				ExpectedOutcomeOrSelfExpectation: "The user expected more respect.",
+			}, nil).
+			Once()
+		feelingClassifier.EXPECT().
+			Classify(mock.Anything, classifierInputText).
+			Return(domain.ClassificationResult{
+				PrimaryFeeling: domain.FeelingScore{Label: "anxious", Confidence: 0.91},
+				ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+			}, nil).
+			Once()
+		analyses.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
+			RunAndReturn(func(_ context.Context, analysis domain.MessageAnalysis) error {
+				require.Equal(t, classifierInputText, analysis.ClassifierInputText)
+				require.Equal(t, "initial vent", analysis.SourceText)
+				require.Equal(t, "anxious", analysis.PrimaryFeeling.Label)
+				return nil
+			}).
+			Once()
+
+		_, _, err := service.CreateChat(context.Background(), "usr_123", " initial vent ")
+
+		require.NoError(t, err)
+	})
 }

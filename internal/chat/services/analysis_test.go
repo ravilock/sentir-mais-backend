@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const classifierInputText = "What happened: The user argued with their manager at work.\nUser felt: anxious\nUser reaction: The user became defensive.\nExpected outcome or self-expectation: The user expected more respect."
+
 func TestPersistMessageAnalysis(t *testing.T) {
 	t.Run("should persist extracted event and sufficiency state", func(t *testing.T) {
 		extractor := newMockLlmExtractor(t)
@@ -125,12 +127,16 @@ func TestPersistMessageAnalysis(t *testing.T) {
 		extractor.EXPECT().
 			ExtractEvent(mock.Anything, history).
 			Return(domain.ExtractedEvent{
-				EnoughContext: true,
-				EventSummary:  "The user argued with their manager.",
+				EnoughContext:                    true,
+				EventSummary:                     "The user argued with their manager.",
+				WhatHappened:                     "The user argued with their manager at work.",
+				FeltEmotionsDescribedByUser:      []string{"anxious"},
+				UserReaction:                     "The user became defensive.",
+				ExpectedOutcomeOrSelfExpectation: "The user expected more respect.",
 			}, nil).
 			Once()
 		feelingClassifier.EXPECT().
-			Classify(mock.Anything, userMessage.Content).
+			Classify(mock.Anything, classifierInputText).
 			Return(domain.ClassificationResult{
 				PrimaryFeeling: domain.FeelingScore{Label: "anxious", Confidence: 0.91},
 				ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
@@ -142,6 +148,7 @@ func TestPersistMessageAnalysis(t *testing.T) {
 				require.NotNil(t, analysis.ExtractedEvent)
 				require.NotNil(t, analysis.EnoughContext)
 				require.True(t, *analysis.EnoughContext)
+				require.Equal(t, classifierInputText, analysis.ClassifierInputText)
 				require.Equal(t, "anxious", analysis.PrimaryFeeling.Label)
 				require.Equal(t, classifier.ProviderName, analysis.ClassifierProvider)
 				return nil
@@ -178,6 +185,7 @@ func TestPersistMessageAnalysis(t *testing.T) {
 			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
 			RunAndReturn(func(_ context.Context, analysis domain.MessageAnalysis) error {
 				require.Nil(t, analysis.ExtractedEvent)
+				require.Equal(t, userMessage.Content, analysis.ClassifierInputText)
 				require.Equal(t, "anxious", analysis.PrimaryFeeling.Label)
 				require.Equal(t, classifier.ProviderName, analysis.ClassifierProvider)
 				return nil
@@ -187,5 +195,21 @@ func TestPersistMessageAnalysis(t *testing.T) {
 		err := persistMessageAnalysis(context.Background(), feelingClassifier, nil, analyses, clock, nil, userMessage)
 
 		require.NoError(t, err)
+	})
+}
+
+func TestBuildClassifierInputText(t *testing.T) {
+	t.Run("should build normalized text from the four core extracted fields", func(t *testing.T) {
+		input := buildClassifierInputText(domain.ExtractedEvent{
+			WhatHappened:                     " The user argued with their manager at work. ",
+			FeltEmotionsDescribedByUser:      []string{" anxious ", ""},
+			UserReaction:                     " The user became defensive. ",
+			ExpectedOutcomeOrSelfExpectation: " The user expected more respect. ",
+			EventSummary:                     "ignored",
+			PeopleInvolved:                   []string{"manager"},
+			Setting:                          "work",
+		})
+
+		require.Equal(t, classifierInputText, input)
 	})
 }

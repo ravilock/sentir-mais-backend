@@ -168,4 +168,70 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "assistant reply", response.Content)
 	})
+
+	t.Run("should classify from extracted context when extraction is sufficient", func(t *testing.T) {
+		chats := newMockChatFinder(t)
+		messages := newMockMessageCreator(t)
+		history := newMockMessageLister(t)
+		updater := newMockChatUpdater(t)
+		responder := newMockLlmResponder(t)
+		extractor := newMockLlmExtractor(t)
+		feelingClassifier := newMockFeelingClassifier(t)
+		analyses := newMockMessageAnalysisCreator(t)
+		clock := newMockClock(t)
+
+		now := time.Date(2026, time.May, 31, 16, 30, 0, 0, time.UTC)
+		service := NewSendMessageService(chats, messages, history, updater, responder).WithAnalysis(feelingClassifier, analyses).WithExtraction(extractor)
+		service.clock = clock
+
+		chatRecord := domain.Chat{
+			ID:        "cht_123",
+			UserID:    "usr_123",
+			CreatedAt: now.Add(-time.Hour),
+			UpdatedAt: now.Add(-time.Minute),
+		}
+		historyMessages := []domain.Message{
+			{ID: "msg_prev", ChatID: "cht_123", UserID: "usr_123", Sender: domain.SenderUser, Content: "previous"},
+		}
+
+		chats.EXPECT().FindByID(mock.Anything, "cht_123").Return(chatRecord, nil).Once()
+		clock.EXPECT().Now().Return(now).Twice()
+		messages.EXPECT().Create(mock.Anything, mock.AnythingOfType("domain.Message")).Return(nil).Twice()
+		history.EXPECT().ListByChatID(mock.Anything, "cht_123").Return(historyMessages, nil).Once()
+		responder.EXPECT().GenerateReply(mock.Anything, historyMessages).Return("assistant reply", nil).Once()
+		updater.EXPECT().Update(mock.Anything, mock.AnythingOfType("domain.Chat")).Return(nil).Once()
+		extractor.EXPECT().
+			ExtractEvent(mock.Anything, mock.AnythingOfType("[]domain.Message")).
+			Return(domain.ExtractedEvent{
+				EnoughContext:                    true,
+				WhatHappened:                     "The user argued with their manager at work.",
+				FeltEmotionsDescribedByUser:      []string{"anxious"},
+				UserReaction:                     "The user became defensive.",
+				ExpectedOutcomeOrSelfExpectation: "The user expected more respect.",
+			}, nil).
+			Once()
+		feelingClassifier.EXPECT().
+			Classify(mock.Anything, classifierInputText).
+			Return(domain.ClassificationResult{
+				PrimaryFeeling: domain.FeelingScore{Label: "stressed", Confidence: 0.82},
+				ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+			}, nil).
+			Once()
+		analyses.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
+			RunAndReturn(func(_ context.Context, analysis domain.MessageAnalysis) error {
+				require.Equal(t, "usr_123", analysis.UserID)
+				require.Equal(t, "cht_123", analysis.ChatID)
+				require.Equal(t, "new message", analysis.SourceText)
+				require.Equal(t, classifierInputText, analysis.ClassifierInputText)
+				require.Equal(t, "stressed", analysis.PrimaryFeeling.Label)
+				return nil
+			}).
+			Once()
+
+		response, err := service.SendMessage(context.Background(), "cht_123", "usr_123", " new message ")
+
+		require.NoError(t, err)
+		require.Equal(t, "assistant reply", response.Content)
+	})
 }

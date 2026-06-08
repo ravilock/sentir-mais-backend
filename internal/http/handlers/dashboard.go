@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"net/http"
 
 	apiresponses "github.com/ravilock/sentir-mais-backend/internal/api/responses"
@@ -8,16 +9,18 @@ import (
 )
 
 type DashboardHandler struct {
+	logger  *slog.Logger
 	service weeklySummaryGetter
 }
 
-func NewDashboardHandler(service weeklySummaryGetter) *DashboardHandler {
-	return &DashboardHandler{service: service}
+func NewDashboardHandler(logger *slog.Logger, service weeklySummaryGetter) *DashboardHandler {
+	return &DashboardHandler{logger: logger, service: service}
 }
 
 func (h *DashboardHandler) GetWeek(w http.ResponseWriter, r *http.Request) {
 	user, ok := middleware.UserFromContext(r.Context())
 	if !ok {
+		logRequestError(h.logger, r, http.StatusUnauthorized, "missing authenticated user in dashboard week request", nil)
 		respondError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}

@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	LogLevel           string
 	HTTPAddress        string
 	SessionTTL         time.Duration
 	CORSAllowedOrigins []string
@@ -23,6 +24,7 @@ type Config struct {
 
 func Load() Config {
 	return Config{
+		LogLevel:           getEnv("LOG_LEVEL", "debug"),
 		HTTPAddress:        getEnv("HTTP_ADDRESS", ":8001"),
 		SessionTTL:         getDurationSeconds("SESSION_TTL_SECONDS", 60*60*24*7),
 		CORSAllowedOrigins: getCSVEnv("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000", "http://localhost:5173", "http://localhost:4000"}),

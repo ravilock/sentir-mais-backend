@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ravilock/sentir-mais-backend/internal/id"
+	applog "github.com/ravilock/sentir-mais-backend/internal/log"
 )
 
 type middleware func(http.Handler) http.Handler
@@ -35,7 +36,7 @@ func requestIDMiddleware() middleware {
 			}
 
 			w.Header().Set("X-Request-ID", requestID)
-			next.ServeHTTP(w, withRequestID(r, requestID))
+			next.ServeHTTP(w, applog.WithRequestID(r, requestID))
 		})
 	}
 }
@@ -49,7 +50,6 @@ func loggingMiddleware(logger *slog.Logger) middleware {
 			next.ServeHTTP(recorder, r)
 
 			logger.Info("request completed",
-				"request_id", requestIDFromContext(r.Context()),
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", recorder.statusCode,
@@ -65,7 +65,6 @@ func recoverMiddleware(logger *slog.Logger) middleware {
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					logger.Error("panic recovered",
-						"request_id", requestIDFromContext(r.Context()),
 						"method", r.Method,
 						"path", r.URL.Path,
 						"panic", recovered,

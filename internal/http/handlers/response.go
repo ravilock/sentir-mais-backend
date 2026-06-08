@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -38,6 +39,23 @@ func respondDecodeError(w http.ResponseWriter, err error) {
 	}
 
 	respondError(w, http.StatusBadRequest, "invalid request body")
+}
+
+func logRequestError(logger *slog.Logger, r *http.Request, status int, message string, err error) {
+	if logger == nil {
+		return
+	}
+
+	attrs := []any{
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", status,
+	}
+	if err != nil {
+		attrs = append(attrs, "error", err.Error())
+	}
+
+	logger.ErrorContext(r.Context(), message, attrs...)
 }
 
 func validationMessages(errs validator.ValidationErrors) string {

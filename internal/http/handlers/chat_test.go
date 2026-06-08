@@ -29,7 +29,7 @@ func (s chatHandlerAuthStub) Authenticate(_ context.Context, _ string) (domain.U
 func TestChatHandler_CreateChat(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
 	creator := newMockChatCreator(t)
-	handler := NewChatHandler(creator, newMockMessageSender(t), newMockMessagesLister(t))
+	handler := NewChatHandler(nil, creator, newMockMessageSender(t), newMockMessagesLister(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/chats", bytes.NewReader([]byte(`{"initialMessage":"I need help"}`)))
 	req.Header.Set("Authorization", "Bearer tok_123")
@@ -53,7 +53,7 @@ func TestChatHandler_CreateChat(t *testing.T) {
 
 func TestChatHandler_CreateChatValidation(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
-	handler := NewChatHandler(newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
+	handler := NewChatHandler(nil, newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
 	req := httptest.NewRequest(http.MethodPost, "/chats", bytes.NewReader([]byte(`{"initialMessage":"   "}`)))
 	req.Header.Set("Authorization", "Bearer tok_123")
 	rec := httptest.NewRecorder()
@@ -68,7 +68,7 @@ func TestChatHandler_CreateChatValidation(t *testing.T) {
 func TestChatHandler_SendMessage(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
 	sender := newMockMessageSender(t)
-	handler := NewChatHandler(newMockChatCreator(t), sender, newMockMessagesLister(t))
+	handler := NewChatHandler(nil, newMockChatCreator(t), sender, newMockMessagesLister(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/chats/cht_123/messages", bytes.NewReader([]byte(`{"message":"follow up"}`)))
 	req.SetPathValue("chatId", "cht_123")
@@ -89,7 +89,7 @@ func TestChatHandler_SendMessage(t *testing.T) {
 
 func TestChatHandler_SendMessageValidation(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
-	handler := NewChatHandler(newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
+	handler := NewChatHandler(nil, newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
 	req := httptest.NewRequest(http.MethodPost, "/chats/cht_123/messages", bytes.NewReader([]byte(`{"message":""}`)))
 	req.SetPathValue("chatId", "cht_123")
 	req.Header.Set("Authorization", "Bearer tok_123")
@@ -104,7 +104,7 @@ func TestChatHandler_SendMessageValidation(t *testing.T) {
 
 func TestChatHandler_ListMessages(t *testing.T) {
 	lister := newMockMessagesLister(t)
-	handler := NewChatHandler(newMockChatCreator(t), newMockMessageSender(t), lister)
+	handler := NewChatHandler(nil, newMockChatCreator(t), newMockMessageSender(t), lister)
 
 	t.Run("should return messages", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/chats/cht_123/messages", nil)

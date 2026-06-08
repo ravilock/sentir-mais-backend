@@ -19,6 +19,7 @@ import (
 	apihandlers "github.com/ravilock/sentir-mais-backend/internal/http/handlers"
 	httpmiddleware "github.com/ravilock/sentir-mais-backend/internal/http/middleware"
 	"github.com/ravilock/sentir-mais-backend/internal/llm"
+	applog "github.com/ravilock/sentir-mais-backend/internal/log"
 	"github.com/ravilock/sentir-mais-backend/internal/storage/mongodb"
 	"github.com/ravilock/sentir-mais-backend/internal/validations"
 )
@@ -99,13 +100,13 @@ func NewServer(cfg config.Config) (Server, error) {
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	dashboardService := dashboardservices.NewGetWeekService()
 
-	logger := newLogger()
+	logger := applog.New(cfg, nil)
 	srv := &server{
 		logger:           logger,
 		close:            func() error { return connection.Close(context.Background()) },
-		authHandler:      apihandlers.NewAuthHandler(registerService, loginService),
-		chatHandler:      apihandlers.NewChatHandler(createChatService, sendMessageService, listMessagesService),
-		dashboardHandler: apihandlers.NewDashboardHandler(dashboardService),
+		authHandler:      apihandlers.NewAuthHandler(logger.With("handler", "auth"), registerService, loginService),
+		chatHandler:      apihandlers.NewChatHandler(logger.With("handler", "chat"), createChatService, sendMessageService, listMessagesService),
+		dashboardHandler: apihandlers.NewDashboardHandler(logger.With("handler", "dashboard"), dashboardService),
 		protect:          httpmiddleware.RequireAuth(authenticateService),
 	}
 

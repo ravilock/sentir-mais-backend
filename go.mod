@@ -1,6 +1,6 @@
 module github.com/ravilock/sentir-mais-backend
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/go-playground/validator/v10 v10.28.0

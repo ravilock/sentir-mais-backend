@@ -163,7 +163,7 @@ func (c *PrompterClient) GenerateReply(ctx context.Context, history []domain.Mes
 	body, err := json.Marshal(generateRequest{
 		Kind:        prompterKindSupportive,
 		Messages:    buildPromptMessages(history),
-		Temperature: 0.7,
+		Temperature: 0.3,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal prompter request: %w", err)
@@ -214,7 +214,7 @@ func (c *PrompterClient) ExtractEvent(ctx context.Context, history []domain.Mess
 	body, err := json.Marshal(generateRequest{
 		Kind:        prompterKindExtraction,
 		Messages:    buildExtractionPromptMessages(history),
-		Temperature: 0.2,
+		Temperature: 0.1,
 		MaxTokens:   1200,
 		ResponseFormat: &generateResponseFormat{
 			Type: "json_object",

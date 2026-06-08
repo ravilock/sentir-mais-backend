@@ -74,6 +74,26 @@ func TestWorkerProcessOne(t *testing.T) {
 		require.Zero(t, queue.releaseCount)
 	})
 
+	t.Run("should requeue consumed job when chat lock acquisition errors", func(t *testing.T) {
+		now := time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)
+		expectedErr := errors.New("redis lock failed")
+		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123"}
+		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockErr: expectedErr}
+		processor := &fakeProcessor{}
+		worker := NewWorker(queue, processor, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+		worker.clock = fakeClock{now: now}
+
+		processed, err := worker.ProcessOne(context.Background())
+
+		require.ErrorIs(t, err, expectedErr)
+		require.False(t, processed)
+		require.Empty(t, processor.jobs)
+		require.Equal(t, 1, queue.retryCount)
+		require.Equal(t, now.Add(time.Second), queue.retryAt)
+		require.Zero(t, queue.ackCount)
+		require.Zero(t, queue.releaseCount)
+	})
+
 	t.Run("should ack dead-lettered jobs", func(t *testing.T) {
 		job := analysisqueue.AnalysisJob{JobID: "anj_123", ChatID: "cht_123", UserID: "usr_123", MessageID: "msg_123"}
 		queue := &fakeQueue{consumed: analysisqueue.ConsumedJob{Job: job}, lockAcquired: true}
@@ -103,6 +123,7 @@ type fakeQueue struct {
 	lockChatID     string
 	lockOwner      string
 	lockTTL        time.Duration
+	lockErr        error
 	releaseCount   int
 }
 
@@ -136,6 +157,10 @@ func (q *fakeQueue) AcquireChatLock(_ context.Context, chatID, owner string, ttl
 	q.lockChatID = chatID
 	q.lockOwner = owner
 	q.lockTTL = ttl
+	if q.lockErr != nil {
+		return false, q.lockErr
+	}
+
 	return q.lockAcquired, nil
 }
 

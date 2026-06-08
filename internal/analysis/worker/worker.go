@@ -113,6 +113,11 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	}
 	locked, err := w.queue.AcquireChatLock(ctx, consumed.Job.ChatID, lockOwner, w.chatLockTTL)
 	if err != nil {
+		retryAt := w.clock.Now().Add(w.lockRetryDelay)
+		if retryErr := w.queue.RetryLater(ctx, consumed, retryAt); retryErr != nil {
+			return false, errors.Join(err, retryErr)
+		}
+
 		return false, err
 	}
 	if !locked {

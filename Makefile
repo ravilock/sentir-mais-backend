@@ -38,6 +38,10 @@ run-all: run-db run-prompter run-classifier run-api run-frontend ## Start local 
 run-api: ## Start the API
 	@$(DOCKER_COMPOSE) up -d $(SVC_BACKEND)
 
+.PHONY: rebuild-api
+rebuild-api: ## Rebuild the API image
+	@$(DOCKER_COMPOSE) build $(SVC_BACKEND)
+
 .PHONY: run-frontend
 run-frontend: ## Build and start the frontend using FRONTEND_API_URL
 	@FRONTEND_API_URL=$(FRONTEND_API_URL) $(DOCKER_COMPOSE) up -d --build $(SVC_FRONTEND)

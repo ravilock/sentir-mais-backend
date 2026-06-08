@@ -2,26 +2,25 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/ravilock/sentir-mais-backend/internal/classifier"
-	"github.com/ravilock/sentir-mais-backend/internal/domain"
+	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateChatService_CreateChat(t *testing.T) {
-	t.Run("should persist initial analysis when classifier is configured", func(t *testing.T) {
+	t.Run("should enqueue initial message analysis job", func(t *testing.T) {
 		chats := newMockChatCreator(t)
 		messages := newMockMessageCreator(t)
 		responder := newMockLlmResponder(t)
-		feelingClassifier := newMockFeelingClassifier(t)
-		analyses := newMockMessageAnalysisCreator(t)
 		clock := newMockClock(t)
+		enqueuer := &capturingAnalysisJobEnqueuer{}
 
 		now := time.Date(2026, time.May, 31, 14, 0, 0, 0, time.UTC)
-		service := NewCreateChatService(chats, messages, responder).WithAnalysis(feelingClassifier, analyses)
+		service := NewCreateChatService(chats, messages, responder, enqueuer)
 		service.clock = clock
 
 		clock.EXPECT().Now().Return(now).Once()
@@ -37,54 +36,35 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 			Create(mock.Anything, mock.AnythingOfType("domain.Message")).
 			Return(nil).
 			Twice()
-		feelingClassifier.EXPECT().
-			Classify(mock.Anything, "initial vent").
-			Return(domain.ClassificationResult{
-				PrimaryFeeling: domain.FeelingScore{Label: "anxious", Confidence: 0.91},
-				SecondaryFeelings: []domain.FeelingScore{
-					{Label: "tense", Confidence: 0.88},
-				},
-				AllScores: []domain.FeelingScore{
-					{Label: "anxious", Confidence: 0.91},
-					{Label: "tense", Confidence: 0.88},
-				},
-				ModelName: "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
-			}, nil).
-			Once()
-		analyses.EXPECT().
-			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
-			RunAndReturn(func(_ context.Context, analysis domain.MessageAnalysis) error {
-				require.NotEmpty(t, analysis.ID)
-				require.NotEmpty(t, analysis.MessageID)
-				require.NotEmpty(t, analysis.ChatID)
-				require.Equal(t, "usr_123", analysis.UserID)
-				require.Equal(t, "initial vent", analysis.SourceText)
-				require.Equal(t, "anxious", analysis.PrimaryFeeling.Label)
-				require.Equal(t, classifier.ProviderName, analysis.ClassifierProvider)
-				require.Equal(t, "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli", analysis.ClassifierModel)
-				require.Equal(t, now, analysis.CreatedAt)
-				return nil
-			}).
-			Once()
 
 		chatRecord, response, err := service.CreateChat(context.Background(), "usr_123", " initial vent ")
 
 		require.NoError(t, err)
 		require.NotEmpty(t, chatRecord.ID)
 		require.Equal(t, "assistant reply", response.Content)
+		require.Equal(t, 1, enqueuer.jobCount())
+
+		job := enqueuer.lastJob()
+		require.NotEmpty(t, job.JobID)
+		require.Equal(t, chatRecord.ID, job.ChatID)
+		require.Equal(t, "usr_123", job.UserID)
+		require.NotEmpty(t, job.MessageID)
+		require.Equal(t, now, job.MessageCreatedAt)
+		require.Equal(t, now, job.EnqueuedAt)
+		require.Equal(t, analysisqueue.StageExtract, job.Stage)
+		require.Zero(t, job.Attempt)
 	})
 
-	t.Run("should classify from extracted context when extraction is sufficient", func(t *testing.T) {
+	t.Run("should fail when analysis job cannot be enqueued", func(t *testing.T) {
 		chats := newMockChatCreator(t)
 		messages := newMockMessageCreator(t)
 		responder := newMockLlmResponder(t)
-		extractor := newMockLlmExtractor(t)
-		feelingClassifier := newMockFeelingClassifier(t)
-		analyses := newMockMessageAnalysisCreator(t)
 		clock := newMockClock(t)
+		expectedErr := errors.New("redis unavailable")
+		enqueuer := &capturingAnalysisJobEnqueuer{err: expectedErr}
 
 		now := time.Date(2026, time.May, 31, 14, 30, 0, 0, time.UTC)
-		service := NewCreateChatService(chats, messages, responder).WithAnalysis(feelingClassifier, analyses).WithExtraction(extractor)
+		service := NewCreateChatService(chats, messages, responder, enqueuer)
 		service.clock = clock
 
 		clock.EXPECT().Now().Return(now).Once()
@@ -100,35 +80,9 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 			Create(mock.Anything, mock.AnythingOfType("domain.Message")).
 			Return(nil).
 			Twice()
-		extractor.EXPECT().
-			ExtractEvent(mock.Anything, mock.AnythingOfType("[]domain.Message")).
-			Return(domain.ExtractedEvent{
-				EnoughContext:                    true,
-				WhatHappened:                     "The user argued with their manager at work.",
-				FeltEmotionsDescribedByUser:      []string{"anxious"},
-				UserReaction:                     "The user became defensive.",
-				ExpectedOutcomeOrSelfExpectation: "The user expected more respect.",
-			}, nil).
-			Once()
-		feelingClassifier.EXPECT().
-			Classify(mock.Anything, classifierInputText).
-			Return(domain.ClassificationResult{
-				PrimaryFeeling: domain.FeelingScore{Label: "anxious", Confidence: 0.91},
-				ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
-			}, nil).
-			Once()
-		analyses.EXPECT().
-			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
-			RunAndReturn(func(_ context.Context, analysis domain.MessageAnalysis) error {
-				require.Equal(t, classifierInputText, analysis.ClassifierInputText)
-				require.Equal(t, "initial vent", analysis.SourceText)
-				require.Equal(t, "anxious", analysis.PrimaryFeeling.Label)
-				return nil
-			}).
-			Once()
 
 		_, _, err := service.CreateChat(context.Background(), "usr_123", " initial vent ")
 
-		require.NoError(t, err)
+		require.ErrorIs(t, err, expectedErr)
 	})
 }

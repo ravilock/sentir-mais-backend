@@ -16,7 +16,6 @@ func TestLoadReadsClassifierConfiguration(t *testing.T) {
 	t.Setenv("CLASSIFIER_TIMEOUT_SECONDS", "15")
 	t.Setenv("REDIS_ADDR", "redis:6379")
 	t.Setenv("REDIS_PASSWORD", "redis-secret")
-	t.Setenv("REDIS_DB", "2")
 	t.Setenv("ANALYSIS_QUEUE_NAME", "analysis-test-jobs")
 
 	cfg := Load()

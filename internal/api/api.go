@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
 	analysisrepositories "github.com/ravilock/sentir-mais-backend/internal/analysis/repositories"
+	analysisservices "github.com/ravilock/sentir-mais-backend/internal/analysis/services"
+	analysisworker "github.com/ravilock/sentir-mais-backend/internal/analysis/worker"
 	authrepositories "github.com/ravilock/sentir-mais-backend/internal/auth/repositories"
 	authservices "github.com/ravilock/sentir-mais-backend/internal/auth/services"
 	chatrepositories "github.com/ravilock/sentir-mais-backend/internal/chat/repositories"
@@ -33,6 +36,7 @@ type server struct {
 	httpServer *http.Server
 	logger     *slog.Logger
 	close      func() error
+	worker     *analysisworker.Worker
 
 	authHandler      *apihandlers.AuthHandler
 	chatHandler      *apihandlers.ChatHandler
@@ -99,24 +103,39 @@ func NewServer(cfg config.Config) (Server, error) {
 	authenticateService := authservices.NewAuthenticateService(sessionRepository, userRepository)
 
 	responder := llm.SupportClient(llm.NewStubSupportClient())
-	var extractor llm.Extractor
+	var extractor analysisservices.Extractor
 	if cfg.PrompterBaseURL != "" {
 		prompterClient := llm.NewPrompterClient(cfg.PrompterBaseURL, cfg.PrompterAPIKey, cfg.PrompterTimeout, logger)
 		responder = prompterClient
 		extractor = prompterClient
 	}
-	classifierClient := classifier.NewClient(cfg.ClassifierBaseURL, cfg.ClassifierAPIKey, cfg.ClassifierTimeout, logger)
-	summaryWriter := dashboardservices.NewSummaryWriter(messageAnalysisRepository, dailySummaryRepository, weeklySummaryRepository)
-	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor).WithSummaries(summaryWriter)
-	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor).WithSummaries(summaryWriter)
+	var classifierClient analysisservices.FeelingClassifier
+	if cfg.ClassifierBaseURL != "" {
+		classifierClient = classifier.NewClient(cfg.ClassifierBaseURL, cfg.ClassifierAPIKey, cfg.ClassifierTimeout, logger)
+	}
+	redisClient := analysisqueue.NewRedisClient(cfg.RedisAddr, cfg.RedisPassword, 0)
+	analysisQueue, err := analysisqueue.NewRedisQueue(redisClient, cfg.AnalysisQueueName)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		_ = redisClient.Close()
+		return nil, err
+	}
+	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder, analysisQueue)
+	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder, analysisQueue)
 	listChatsService := chatservices.NewListChatsService(chatRepository, messageRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
+	summaryWriter := dashboardservices.NewSummaryWriter(messageAnalysisRepository, dailySummaryRepository, weeklySummaryRepository)
+	analysisProcessor := analysisservices.NewProcessor(messageRepository, extractor, classifierClient, messageAnalysisRepository, summaryWriter, nil)
+	analysisWorker := analysisworker.NewWorker(analysisQueue, analysisProcessor, logger.With("component", "analysis-worker"))
 	dashboardService := dashboardservices.NewGetWeekService(weeklySummaryRepository)
 	timelineService := dashboardservices.NewGetTimelineService(dailySummaryRepository)
 
 	srv := &server{
-		logger:           logger,
-		close:            func() error { return connection.Close(context.Background()) },
+		logger: logger,
+		worker: analysisWorker,
+		close: func() error {
+			return errors.Join(connection.Close(context.Background()), redisClient.Close())
+		},
 		authHandler:      apihandlers.NewAuthHandler(logger.With("handler", "auth"), registerService, loginService),
 		chatHandler:      apihandlers.NewChatHandler(logger.With("handler", "chat"), createChatService, sendMessageService, listChatsService, listMessagesService),
 		dashboardHandler: apihandlers.NewDashboardHandler(logger.With("handler", "dashboard"), dashboardService, timelineService),
@@ -141,7 +160,20 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) Start() error {
 	s.logger.Info("starting api server", "address", s.httpServer.Addr)
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	workerDone := make(chan struct{})
+	if s.worker != nil {
+		go func() {
+			defer close(workerDone)
+			s.worker.Run(workerCtx)
+		}()
+	} else {
+		close(workerDone)
+	}
+
 	err := s.httpServer.ListenAndServe()
+	stopWorker()
+	<-workerDone
 	if s.close != nil {
 		if closeErr := s.close(); closeErr != nil {
 			return errors.Join(err, closeErr)

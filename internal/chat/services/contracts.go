@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
 )
 
@@ -53,6 +54,10 @@ type messageAnalysisCreator interface {
 
 type summaryWriter interface {
 	UpdateForAnalysis(ctx context.Context, analysis domain.MessageAnalysis) error
+}
+
+type analysisJobEnqueuer interface {
+	Enqueue(ctx context.Context, job analysisqueue.AnalysisJob) error
 }
 
 type clock interface {

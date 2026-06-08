@@ -53,20 +53,6 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func getInt(key string, fallback int) int {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return fallback
-	}
-
-	value, err := strconv.Atoi(raw)
-	if err != nil {
-		return fallback
-	}
-
-	return value
-}
-
 func getDurationSeconds(key string, fallbackSeconds int) time.Duration {
 	raw := os.Getenv(key)
 	if raw == "" {

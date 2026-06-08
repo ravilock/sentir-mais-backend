@@ -3,46 +3,30 @@ package services
 import (
 	"context"
 	"strings"
+	"time"
 
+	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
 	"github.com/ravilock/sentir-mais-backend/internal/chat"
 	"github.com/ravilock/sentir-mais-backend/internal/domain"
 	"github.com/ravilock/sentir-mais-backend/internal/id"
 )
 
 type CreateChatService struct {
-	chats      chatCreator
-	messages   messageCreator
-	responder  llmResponder
-	extractor  llmExtractor
-	classifier feelingClassifier
-	analyses   messageAnalysisCreator
-	summaries  summaryWriter
-	clock      clock
+	chats     chatCreator
+	messages  messageCreator
+	responder llmResponder
+	analysis  analysisJobEnqueuer
+	clock     clock
 }
 
-func NewCreateChatService(chats chatCreator, messages messageCreator, responder llmResponder) *CreateChatService {
+func NewCreateChatService(chats chatCreator, messages messageCreator, responder llmResponder, analysis analysisJobEnqueuer) *CreateChatService {
 	return &CreateChatService{
 		chats:     chats,
 		messages:  messages,
 		responder: responder,
+		analysis:  analysis,
 		clock:     realClock{},
 	}
-}
-
-func (s *CreateChatService) WithAnalysis(classifier feelingClassifier, analyses messageAnalysisCreator) *CreateChatService {
-	s.classifier = classifier
-	s.analyses = analyses
-	return s
-}
-
-func (s *CreateChatService) WithExtraction(extractor llmExtractor) *CreateChatService {
-	s.extractor = extractor
-	return s
-}
-
-func (s *CreateChatService) WithSummaries(summaries summaryWriter) *CreateChatService {
-	s.summaries = summaries
-	return s
 }
 
 func (s *CreateChatService) CreateChat(ctx context.Context, userID, initialMessage string) (domain.Chat, domain.Message, error) {
@@ -86,9 +70,30 @@ func (s *CreateChatService) CreateChat(ctx context.Context, userID, initialMessa
 	if err := s.messages.Create(ctx, assistantMessage); err != nil {
 		return domain.Chat{}, domain.Message{}, err
 	}
-	if err := persistMessageAnalysis(ctx, s.classifier, s.extractor, s.analyses, s.summaries, s.clock, []domain.Message{userMessage, assistantMessage}, userMessage); err != nil {
+	if err := s.enqueueAnalysis(ctx, userMessage, now); err != nil {
 		return domain.Chat{}, domain.Message{}, err
 	}
 
 	return chatRecord, assistantMessage, nil
+}
+
+func (s *CreateChatService) enqueueAnalysis(ctx context.Context, message domain.Message, enqueuedAt time.Time) error {
+	if s.analysis == nil {
+		return nil
+	}
+
+	jobID, err := id.New("anj")
+	if err != nil {
+		return err
+	}
+
+	return s.analysis.Enqueue(ctx, analysisqueue.AnalysisJob{
+		JobID:            jobID,
+		ChatID:           message.ChatID,
+		UserID:           message.UserID,
+		MessageID:        message.ID,
+		MessageCreatedAt: message.CreatedAt,
+		EnqueuedAt:       enqueuedAt,
+		Stage:            analysisqueue.StageExtract,
+	})
 }

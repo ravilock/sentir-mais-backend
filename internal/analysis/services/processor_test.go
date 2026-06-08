@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -40,8 +41,10 @@ func TestProcessorProcess(t *testing.T) {
 			summaries,
 			stubClock{now: messageCreatedAt.Add(time.Hour)},
 		)
+		processor.sleep = noSleep
 
 		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
+			JobID:     "anj_123",
 			ChatID:    "cht_123",
 			UserID:    "usr_123",
 			MessageID: "msg_user",
@@ -77,6 +80,7 @@ func TestProcessorProcess(t *testing.T) {
 			nil,
 			nil,
 		)
+		processor.sleep = noSleep
 
 		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
 			ChatID:    "cht_123",
@@ -85,6 +89,121 @@ func TestProcessorProcess(t *testing.T) {
 		})
 
 		require.ErrorIs(t, err, ErrMessageNotFound)
+	})
+
+	t.Run("should skip duplicate message analysis", func(t *testing.T) {
+		analyses := &capturingAnalysisCreator{exists: true}
+		processor := NewProcessor(
+			stubHistoryLister{messages: []domain.Message{{ID: "msg_user", ChatID: "cht_123", UserID: "usr_123"}}},
+			stubExtractor{},
+			stubClassifier{},
+			analyses,
+			&capturingSummaryWriter{},
+			nil,
+		)
+
+		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			MessageID: "msg_user",
+		})
+
+		require.NoError(t, err)
+		require.Empty(t, analyses.created)
+	})
+
+	t.Run("should fallback to raw message classification after extraction exhaustion", func(t *testing.T) {
+		expectedErr := errors.New("prompter timeout")
+		messageCreatedAt := time.Date(2026, time.June, 1, 11, 0, 0, 0, time.UTC)
+		history := []domain.Message{
+			{ID: "msg_user", ChatID: "cht_123", UserID: "usr_123", Sender: domain.SenderUser, Content: "raw emotional message", CreatedAt: messageCreatedAt},
+		}
+		extractor := &countingExtractor{err: expectedErr}
+		classifier := &countingClassifier{result: domain.ClassificationResult{
+			PrimaryFeeling: domain.FeelingScore{Label: "stressed", Confidence: 0.82},
+			ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+		}}
+		analyses := &capturingAnalysisCreator{}
+		processor := NewProcessor(stubHistoryLister{messages: history}, extractor, classifier, analyses, nil, nil)
+		processor.sleep = noSleep
+
+		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
+			JobID:     "anj_123",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			MessageID: "msg_user",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, 3, extractor.calls)
+		require.Equal(t, 1, classifier.calls)
+		require.Equal(t, "raw emotional message", classifier.inputs[0])
+		require.Len(t, analyses.created, 1)
+		require.Nil(t, analyses.created[0].ExtractedEvent)
+		require.Equal(t, "stressed", analyses.created[0].PrimaryFeeling.Label)
+	})
+
+	t.Run("should dead letter after classifier retry exhaustion", func(t *testing.T) {
+		expectedErr := errors.New("classifier unavailable")
+		messageCreatedAt := time.Date(2026, time.June, 1, 11, 0, 0, 0, time.UTC)
+		history := []domain.Message{
+			{ID: "msg_user", ChatID: "cht_123", UserID: "usr_123", Sender: domain.SenderUser, Content: "raw emotional message", CreatedAt: messageCreatedAt},
+		}
+		classifier := &countingClassifier{err: expectedErr}
+		deadLetters := &capturingDeadLetterCreator{}
+		processor := NewProcessorWithDeadLetters(stubHistoryLister{messages: history}, nil, classifier, &capturingAnalysisCreator{}, nil, deadLetters, stubClock{now: messageCreatedAt.Add(time.Hour)})
+		processor.sleep = noSleep
+
+		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
+			JobID:     "anj_123",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			MessageID: "msg_user",
+			Attempt:   7,
+		})
+
+		require.ErrorIs(t, err, ErrDeadLettered)
+		require.Equal(t, 10, classifier.calls)
+		require.Len(t, deadLetters.created, 1)
+		require.Equal(t, "classify", deadLetters.created[0].Stage)
+		require.Equal(t, "stage_retry_exhausted", deadLetters.created[0].Reason)
+		require.Equal(t, expectedErr.Error(), deadLetters.created[0].Error)
+		require.Equal(t, 7, deadLetters.created[0].Attempt)
+	})
+
+	t.Run("should dead letter after summary retry exhaustion", func(t *testing.T) {
+		expectedErr := errors.New("summary write failed")
+		messageCreatedAt := time.Date(2026, time.June, 1, 11, 0, 0, 0, time.UTC)
+		history := []domain.Message{
+			{ID: "msg_user", ChatID: "cht_123", UserID: "usr_123", Sender: domain.SenderUser, Content: "raw emotional message", CreatedAt: messageCreatedAt},
+		}
+		summaries := &capturingSummaryWriter{err: expectedErr}
+		deadLetters := &capturingDeadLetterCreator{}
+		processor := NewProcessorWithDeadLetters(
+			stubHistoryLister{messages: history},
+			nil,
+			stubClassifier{result: domain.ClassificationResult{
+				PrimaryFeeling: domain.FeelingScore{Label: "sad", Confidence: 0.9},
+				ModelName:      "model",
+			}},
+			&capturingAnalysisCreator{},
+			summaries,
+			deadLetters,
+			stubClock{now: messageCreatedAt.Add(time.Hour)},
+		)
+		processor.sleep = noSleep
+
+		err := processor.Process(context.Background(), analysisqueue.AnalysisJob{
+			JobID:     "anj_123",
+			ChatID:    "cht_123",
+			UserID:    "usr_123",
+			MessageID: "msg_user",
+		})
+
+		require.ErrorIs(t, err, ErrDeadLettered)
+		require.Len(t, summaries.updated, 3)
+		require.Len(t, deadLetters.created, 1)
+		require.Equal(t, "summaries", deadLetters.created[0].Stage)
 	})
 }
 
@@ -118,6 +237,7 @@ func (s stubClassifier) Classify(_ context.Context, _ string) (domain.Classifica
 type capturingAnalysisCreator struct {
 	created []domain.MessageAnalysis
 	err     error
+	exists  bool
 }
 
 func (c *capturingAnalysisCreator) Create(_ context.Context, analysis domain.MessageAnalysis) error {
@@ -129,6 +249,10 @@ func (c *capturingAnalysisCreator) Create(_ context.Context, analysis domain.Mes
 	return nil
 }
 
+func (c *capturingAnalysisCreator) ExistsByMessageID(_ context.Context, _ string) (bool, error) {
+	return c.exists, nil
+}
+
 type capturingSummaryWriter struct {
 	updated []domain.MessageAnalysis
 	err     error
@@ -137,6 +261,48 @@ type capturingSummaryWriter struct {
 func (w *capturingSummaryWriter) UpdateForAnalysis(_ context.Context, analysis domain.MessageAnalysis) error {
 	w.updated = append(w.updated, analysis)
 	return w.err
+}
+
+type capturingDeadLetterCreator struct {
+	created []domain.AnalysisDeadLetter
+	err     error
+}
+
+func (c *capturingDeadLetterCreator) Create(_ context.Context, deadLetter domain.AnalysisDeadLetter) error {
+	if c.err != nil {
+		return c.err
+	}
+
+	c.created = append(c.created, deadLetter)
+	return nil
+}
+
+type countingExtractor struct {
+	calls int
+	event domain.ExtractedEvent
+	err   error
+}
+
+func (e *countingExtractor) ExtractEvent(_ context.Context, _ []domain.Message) (domain.ExtractedEvent, error) {
+	e.calls++
+	return e.event, e.err
+}
+
+type countingClassifier struct {
+	calls  int
+	inputs []string
+	result domain.ClassificationResult
+	err    error
+}
+
+func (c *countingClassifier) Classify(_ context.Context, text string) (domain.ClassificationResult, error) {
+	c.calls++
+	c.inputs = append(c.inputs, text)
+	return c.result, c.err
+}
+
+func noSleep(_ context.Context, _ time.Duration) error {
+	return nil
 }
 
 type stubClock struct {

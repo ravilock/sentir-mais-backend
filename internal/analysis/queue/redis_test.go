@@ -69,6 +69,52 @@ func TestRedisQueueRetryLaterAndMoveDueRetries(t *testing.T) {
 	require.Equal(t, 1, consumedAgain.Job.Attempt)
 }
 
+func TestRedisQueueDeadLetter(t *testing.T) {
+	ctx := context.Background()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+	queue, err := NewRedisQueue(client, "analysis-test")
+	require.NoError(t, err)
+
+	require.NoError(t, queue.Enqueue(ctx, testAnalysisJob()))
+	consumed, err := queue.Consume(ctx, time.Millisecond)
+	require.NoError(t, err)
+
+	require.NoError(t, queue.DeadLetter(ctx, consumed))
+	require.Equal(t, int64(0), client.LLen(ctx, queue.processingKey).Val())
+	require.Equal(t, int64(1), client.LLen(ctx, queue.deadLetterKey).Val())
+}
+
+func TestRedisQueueChatLock(t *testing.T) {
+	ctx := context.Background()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+	queue, err := NewRedisQueue(client, "analysis-test")
+	require.NoError(t, err)
+
+	locked, err := queue.AcquireChatLock(ctx, "cht_123", "worker-a", time.Minute)
+	require.NoError(t, err)
+	require.True(t, locked)
+
+	locked, err = queue.AcquireChatLock(ctx, "cht_123", "worker-b", time.Minute)
+	require.NoError(t, err)
+	require.False(t, locked)
+
+	require.NoError(t, queue.ReleaseChatLock(ctx, "cht_123", "worker-b"))
+	locked, err = queue.AcquireChatLock(ctx, "cht_123", "worker-b", time.Minute)
+	require.NoError(t, err)
+	require.False(t, locked)
+
+	require.NoError(t, queue.ReleaseChatLock(ctx, "cht_123", "worker-a"))
+	locked, err = queue.AcquireChatLock(ctx, "cht_123", "worker-b", time.Minute)
+	require.NoError(t, err)
+	require.True(t, locked)
+}
+
 func TestRedisQueueConsumeNoJob(t *testing.T) {
 	ctx := context.Background()
 	server := miniredis.RunT(t)

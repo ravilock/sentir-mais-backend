@@ -87,6 +87,11 @@ func NewServer(cfg config.Config) (Server, error) {
 		_ = connection.Close(context.Background())
 		return nil, err
 	}
+	deadLetterRepository, err := analysisrepositories.NewDeadLetterRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
 	dailySummaryRepository, err := analysisrepositories.NewDailySummaryRepository(storeCtx, connection.Database)
 	if err != nil {
 		_ = connection.Close(context.Background())
@@ -125,7 +130,7 @@ func NewServer(cfg config.Config) (Server, error) {
 	listChatsService := chatservices.NewListChatsService(chatRepository, messageRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	summaryWriter := dashboardservices.NewSummaryWriter(messageAnalysisRepository, dailySummaryRepository, weeklySummaryRepository)
-	analysisProcessor := analysisservices.NewProcessor(messageRepository, extractor, classifierClient, messageAnalysisRepository, summaryWriter, nil)
+	analysisProcessor := analysisservices.NewProcessorWithDeadLetters(messageRepository, extractor, classifierClient, messageAnalysisRepository, summaryWriter, deadLetterRepository, nil)
 	analysisWorker := analysisworker.NewWorker(analysisQueue, analysisProcessor, logger.With("component", "analysis-worker"))
 	dashboardService := dashboardservices.NewGetWeekService(weeklySummaryRepository)
 	timelineService := dashboardservices.NewGetTimelineService(dailySummaryRepository)

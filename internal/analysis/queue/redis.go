@@ -17,6 +17,8 @@ type RedisQueue struct {
 	readyKey      string
 	processingKey string
 	delayedKey    string
+	deadLetterKey string
+	lockKeyPrefix string
 }
 
 func NewRedisQueue(client redis.Cmdable, name string) (*RedisQueue, error) {
@@ -32,6 +34,8 @@ func NewRedisQueue(client redis.Cmdable, name string) (*RedisQueue, error) {
 		readyKey:      fmt.Sprintf("queue:%s:ready", name),
 		processingKey: fmt.Sprintf("queue:%s:processing", name),
 		delayedKey:    fmt.Sprintf("queue:%s:delayed", name),
+		deadLetterKey: fmt.Sprintf("queue:%s:dead-letter", name),
+		lockKeyPrefix: fmt.Sprintf("queue:%s:chat-lock:", name),
 	}, nil
 }
 
@@ -104,6 +108,46 @@ func (q *RedisQueue) RetryLater(ctx context.Context, consumed ConsumedJob, runAt
 	return err
 }
 
+func (q *RedisQueue) DeadLetter(ctx context.Context, consumed ConsumedJob) error {
+	if consumed.raw == "" {
+		return errors.New("consumed job payload is required")
+	}
+
+	pipe := q.client.TxPipeline()
+	pipe.LRem(ctx, q.processingKey, 1, consumed.raw)
+	pipe.LPush(ctx, q.deadLetterKey, consumed.raw)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (q *RedisQueue) AcquireChatLock(ctx context.Context, chatID, owner string, ttl time.Duration) (bool, error) {
+	if chatID == "" {
+		return false, errors.New("chat id is required")
+	}
+	if owner == "" {
+		return false, errors.New("lock owner is required")
+	}
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+
+	return q.client.SetNX(ctx, q.chatLockKey(chatID), owner, ttl).Result()
+}
+
+func (q *RedisQueue) ReleaseChatLock(ctx context.Context, chatID, owner string) error {
+	if chatID == "" || owner == "" {
+		return nil
+	}
+
+	script := redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+	return redis.call("DEL", KEYS[1])
+end
+return 0
+`)
+	return script.Run(ctx, q.client, []string{q.chatLockKey(chatID)}, owner).Err()
+}
+
 func (q *RedisQueue) MoveDueRetries(ctx context.Context, now time.Time, limit int64) (int64, error) {
 	if limit <= 0 {
 		limit = 100
@@ -133,6 +177,10 @@ func (q *RedisQueue) MoveDueRetries(ctx context.Context, now time.Time, limit in
 	}
 
 	return int64(len(payloads)), nil
+}
+
+func (q *RedisQueue) chatLockKey(chatID string) string {
+	return q.lockKeyPrefix + chatID
 }
 
 var ErrNoJob = errors.New("no analysis job available")

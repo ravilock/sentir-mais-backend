@@ -89,6 +89,18 @@ func (r *MessageAnalysisRepository) Create(ctx context.Context, analysis domain.
 	return err
 }
 
+func (r *MessageAnalysisRepository) ExistsByMessageID(ctx context.Context, messageID string) (bool, error) {
+	err := r.collection.FindOne(ctx, bson.D{{Key: "message_id", Value: messageID}}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
+	if err == mongo.ErrNoDocuments {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (r *MessageAnalysisRepository) ListByUserAndCreatedAtRange(ctx context.Context, userID string, start, end time.Time) ([]domain.MessageAnalysis, error) {
 	cursor, err := r.collection.Find(ctx, bson.M{
 		"user_id": userID,

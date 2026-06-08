@@ -38,10 +38,10 @@ func Load() Config {
 		AnalysisQueueName:  getEnv("ANALYSIS_QUEUE_NAME", "analysis-jobs"),
 		PrompterBaseURL:    getEnv("PROMPTER_BASE_URL", ""),
 		PrompterAPIKey:     getEnv("PROMPTER_API_KEY", ""),
-		PrompterTimeout:    getDurationSeconds("PROMPTER_TIMEOUT_SECONDS", 10),
+		PrompterTimeout:    getDurationSeconds("PROMPTER_TIMEOUT_SECONDS", 30),
 		ClassifierBaseURL:  getEnv("CLASSIFIER_BASE_URL", ""),
 		ClassifierAPIKey:   getEnv("CLASSIFIER_API_KEY", ""),
-		ClassifierTimeout:  getDurationSeconds("CLASSIFIER_TIMEOUT_SECONDS", 10),
+		ClassifierTimeout:  getDurationSeconds("CLASSIFIER_TIMEOUT_SECONDS", 30),
 	}
 }
 

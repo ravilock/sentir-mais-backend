@@ -7,11 +7,14 @@ import (
 	"time"
 
 	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
+	analysisservices "github.com/ravilock/sentir-mais-backend/internal/analysis/services"
 )
 
 const (
 	defaultConsumeTimeout = time.Second
 	defaultRetryDelay     = 30 * time.Second
+	defaultLockRetryDelay = time.Second
+	defaultChatLockTTL    = 2 * time.Minute
 	defaultRetryLimit     = int64(100)
 )
 
@@ -20,6 +23,8 @@ type Queue interface {
 	Ack(ctx context.Context, consumed analysisqueue.ConsumedJob) error
 	RetryLater(ctx context.Context, consumed analysisqueue.ConsumedJob, runAt time.Time) error
 	MoveDueRetries(ctx context.Context, now time.Time, limit int64) (int64, error)
+	AcquireChatLock(ctx context.Context, chatID, owner string, ttl time.Duration) (bool, error)
+	ReleaseChatLock(ctx context.Context, chatID, owner string) error
 }
 
 type Processor interface {
@@ -37,6 +42,8 @@ type Worker struct {
 	clock          Clock
 	consumeTimeout time.Duration
 	retryDelay     time.Duration
+	lockRetryDelay time.Duration
+	chatLockTTL    time.Duration
 	retryLimit     int64
 }
 
@@ -52,6 +59,8 @@ func NewWorker(queue Queue, processor Processor, logger *slog.Logger) *Worker {
 		clock:          realClock{},
 		consumeTimeout: defaultConsumeTimeout,
 		retryDelay:     defaultRetryDelay,
+		lockRetryDelay: defaultLockRetryDelay,
+		chatLockTTL:    defaultChatLockTTL,
 		retryLimit:     defaultRetryLimit,
 	}
 }
@@ -98,7 +107,32 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
+	lockOwner := consumed.Job.JobID
+	if lockOwner == "" {
+		lockOwner = consumed.Job.MessageID
+	}
+	locked, err := w.queue.AcquireChatLock(ctx, consumed.Job.ChatID, lockOwner, w.chatLockTTL)
+	if err != nil {
+		return false, err
+	}
+	if !locked {
+		return false, w.queue.RetryLater(ctx, consumed, w.clock.Now().Add(w.lockRetryDelay))
+	}
+	defer func() {
+		if err := w.queue.ReleaseChatLock(ctx, consumed.Job.ChatID, lockOwner); err != nil {
+			w.logger.Error("failed to release analysis chat lock", "chat_id", consumed.Job.ChatID, "job_id", consumed.Job.JobID, "error", err)
+		}
+	}()
+
 	if err := w.processor.Process(ctx, consumed.Job); err != nil {
+		if errors.Is(err, analysisservices.ErrDeadLettered) {
+			if ackErr := w.queue.Ack(ctx, consumed); ackErr != nil {
+				return false, errors.Join(err, ackErr)
+			}
+
+			return true, nil
+		}
+
 		retryAt := w.clock.Now().Add(w.retryDelay)
 		if retryErr := w.queue.RetryLater(ctx, consumed, retryAt); retryErr != nil {
 			return false, errors.Join(err, retryErr)

@@ -108,6 +108,19 @@ type MessageAnalysis struct {
 	CreatedAt           time.Time
 }
 
+type AnalysisDeadLetter struct {
+	ID        string
+	JobID     string
+	ChatID    string
+	UserID    string
+	MessageID string
+	Stage     string
+	Reason    string
+	Error     string
+	Attempt   int
+	CreatedAt time.Time
+}
+
 type TimelinePoint struct {
 	Date            string
 	PrimaryFeeling  string

@@ -19,6 +19,7 @@ import (
 	"github.com/ravilock/sentir-mais-backend/internal/config"
 	"github.com/ravilock/sentir-mais-backend/internal/storage/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 const testDatabaseName = "sentir_mais_integration_tests"
@@ -31,6 +32,9 @@ var (
 func Setup() error {
 	cfg := config.Load()
 	cfg.MongoDatabase = testDatabaseName
+	if databaseName := os.Getenv("INTEGRATION_TEST_DATABASE"); databaseName != "" {
+		cfg.MongoDatabase = databaseName
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -95,6 +99,10 @@ func ClearDatabase(t *testing.T) {
 
 func BaseURL() string {
 	return testServer.URL
+}
+
+func Database() *mongo.Database {
+	return testConnection.Database
 }
 
 func MustJSONRequest(t *testing.T, method, path string, body any, token string) *http.Response {
@@ -196,6 +204,26 @@ func MustFindSessionByToken(t *testing.T, token string) bson.M {
 	}
 
 	return document
+}
+
+func EventuallyFindDocument(t *testing.T, collection string, filter any) bson.M {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		var document bson.M
+		lastErr = testConnection.Database.Collection(collection).FindOne(ctx, filter).Decode(&document)
+		cancel()
+		if lastErr == nil {
+			return document
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("find %s document before timeout: %v", collection, lastErr)
+	return nil
 }
 
 func RequireMongoAvailable() {

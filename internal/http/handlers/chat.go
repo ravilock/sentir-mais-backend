@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	apirequests "github.com/ravilock/sentir-mais-backend/internal/api/requests"
 	apiresponses "github.com/ravilock/sentir-mais-backend/internal/api/responses"
@@ -16,14 +17,16 @@ type ChatHandler struct {
 	logger  *slog.Logger
 	creator chatCreator
 	sender  messageSender
+	chats   chatsLister
 	lister  messagesLister
 }
 
-func NewChatHandler(logger *slog.Logger, creator chatCreator, sender messageSender, lister messagesLister) *ChatHandler {
+func NewChatHandler(logger *slog.Logger, creator chatCreator, sender messageSender, chats chatsLister, lister messagesLister) *ChatHandler {
 	return &ChatHandler{
 		logger:  logger,
 		creator: creator,
 		sender:  sender,
+		chats:   chats,
 		lister:  lister,
 	}
 }
@@ -104,6 +107,37 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, toMessageResponse(response))
+}
+
+func (h *ChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		logRequestError(h.logger, r, http.StatusUnauthorized, "missing authenticated user in list chats request", nil)
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	chats, err := h.chats.ListChats(r.Context(), user.ID)
+	if err != nil {
+		logRequestError(h.logger, r, http.StatusInternalServerError, "list chats request failed", err)
+		respondError(w, http.StatusInternalServerError, "failed to list chats")
+		return
+	}
+
+	response := apiresponses.ListChatsResponse{
+		Chats: make([]apiresponses.ChatSummaryResponse, 0, len(chats)),
+	}
+	for _, chatSummary := range chats {
+		response.Chats = append(response.Chats, apiresponses.ChatSummaryResponse{
+			ID:                 chatSummary.ID,
+			CreatedAt:          chatSummary.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt:          chatSummary.UpdatedAt.UTC().Format(time.RFC3339),
+			LastMessagePreview: chatSummary.LastMessagePreview,
+			LastMessageAt:      chatSummary.LastMessageAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+	respondJSON(w, http.StatusOK, response)
 }
 
 func (h *ChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {

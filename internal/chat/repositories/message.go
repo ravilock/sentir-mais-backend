@@ -76,6 +76,30 @@ func (r *MessageRepository) ListByChatID(ctx context.Context, chatID string) ([]
 	return messages, nil
 }
 
+func (r *MessageRepository) FindLatestByChatID(ctx context.Context, chatID string) (domain.Message, error) {
+	var document messageDocument
+	err := r.collection.FindOne(
+		ctx,
+		bson.D{{Key: "chat_id", Value: chatID}},
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}}),
+	).Decode(&document)
+	if err == mongo.ErrNoDocuments {
+		return domain.Message{}, nil
+	}
+	if err != nil {
+		return domain.Message{}, err
+	}
+
+	return domain.Message{
+		ID:        document.ID,
+		ChatID:    document.ChatID,
+		UserID:    document.UserID,
+		Sender:    domain.Sender(document.Sender),
+		Content:   document.Content,
+		CreatedAt: document.CreatedAt.UTC(),
+	}, nil
+}
+
 func (r *MessageRepository) ensureIndexes(ctx context.Context) error {
 	_, err := r.collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{

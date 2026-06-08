@@ -10,6 +10,7 @@ Primeiro backend executável para o MVP do Sentir Mais, agora alinhado ao bootst
   - `POST /auth/login`
   - `GET /auth/me`
 - chat inicial com:
+  - `GET /chats`
   - `POST /chats`
   - `POST /chats/{chatId}/messages`
   - `GET /chats/{chatId}/messages`
@@ -144,6 +145,6 @@ Se `CLASSIFIER_BASE_URL` estiver configurada, o backend classifica cada mensagem
 
 As rotas atuais continuam válidas sem prefixo e também estão expostas no formato versionado usado como referência no repositório de exemplo:
 
-- legado: `/auth/*`, `/chats/*`, `/dashboard/week`
-- versionado: `/api/v1/auth/*`, `/api/v1/chats/*`, `/api/v1/dashboard/week`
+- legado: `/auth/*`, `/chats`, `/chats/{chatId}/messages`, `/dashboard/week`
+- versionado: `/api/v1/auth/*`, `/api/v1/chats`, `/api/v1/chats/{chatId}/messages`, `/api/v1/dashboard/week`
 - healthcheck: `/healthz` e `/api/healthcheck`

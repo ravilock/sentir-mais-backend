@@ -109,6 +109,7 @@ func NewServer(cfg config.Config) (Server, error) {
 	summaryWriter := dashboardservices.NewSummaryWriter(messageAnalysisRepository, dailySummaryRepository, weeklySummaryRepository)
 	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor).WithSummaries(summaryWriter)
 	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor).WithSummaries(summaryWriter)
+	listChatsService := chatservices.NewListChatsService(chatRepository, messageRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	dashboardService := dashboardservices.NewGetWeekService()
 
@@ -116,7 +117,7 @@ func NewServer(cfg config.Config) (Server, error) {
 		logger:           logger,
 		close:            func() error { return connection.Close(context.Background()) },
 		authHandler:      apihandlers.NewAuthHandler(logger.With("handler", "auth"), registerService, loginService),
-		chatHandler:      apihandlers.NewChatHandler(logger.With("handler", "chat"), createChatService, sendMessageService, listMessagesService),
+		chatHandler:      apihandlers.NewChatHandler(logger.With("handler", "chat"), createChatService, sendMessageService, listChatsService, listMessagesService),
 		dashboardHandler: apihandlers.NewDashboardHandler(logger.With("handler", "dashboard"), dashboardService),
 		protect:          httpmiddleware.RequireAuth(authenticateService),
 	}
@@ -168,6 +169,7 @@ func (s *server) createAuthRoutes(mux *http.ServeMux, prefix string) {
 
 func (s *server) createChatRoutes(mux *http.ServeMux, prefix string) {
 	mux.Handle(routePattern(http.MethodPost, prefix, "/chats"), s.protect(http.HandlerFunc(s.chatHandler.CreateChat)))
+	mux.Handle(routePattern(http.MethodGet, prefix, "/chats"), s.protect(http.HandlerFunc(s.chatHandler.ListChats)))
 	mux.Handle(routePattern(http.MethodPost, prefix, "/chats/{chatId}/messages"), s.protect(http.HandlerFunc(s.chatHandler.SendMessage)))
 	mux.Handle(routePattern(http.MethodGet, prefix, "/chats/{chatId}/messages"), s.protect(http.HandlerFunc(s.chatHandler.ListMessages)))
 }

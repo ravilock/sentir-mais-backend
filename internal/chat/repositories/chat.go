@@ -81,6 +81,35 @@ func (r *ChatRepository) Update(ctx context.Context, chatRecord domain.Chat) err
 	return nil
 }
 
+func (r *ChatRepository) ListByUserID(ctx context.Context, userID string) ([]domain.Chat, error) {
+	cursor, err := r.collection.Find(
+		ctx,
+		bson.D{{Key: "user_id", Value: userID}},
+		options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	documents := make([]chatDocument, 0)
+	if err := cursor.All(ctx, &documents); err != nil {
+		return nil, err
+	}
+
+	chats := make([]domain.Chat, 0, len(documents))
+	for _, document := range documents {
+		chats = append(chats, domain.Chat{
+			ID:        document.ID,
+			UserID:    document.UserID,
+			CreatedAt: document.CreatedAt.UTC(),
+			UpdatedAt: document.UpdatedAt.UTC(),
+		})
+	}
+
+	return chats, nil
+}
+
 func (r *ChatRepository) ensureIndexes(ctx context.Context) error {
 	_, err := r.collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{

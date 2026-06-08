@@ -31,6 +31,14 @@ type Chat struct {
 	UpdatedAt time.Time
 }
 
+type ChatSummary struct {
+	ID                 string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	LastMessagePreview string
+	LastMessageAt      time.Time
+}
+
 type Message struct {
 	ID        string
 	ChatID    string

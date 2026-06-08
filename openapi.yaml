@@ -75,6 +75,21 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
   /chats:
+    get:
+      tags: [Chats]
+      summary: List the authenticated user's chats
+      operationId: listChats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Chat summaries ordered by latest activity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListChatsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       tags: [Chats]
       summary: Create a chat session
@@ -263,6 +278,33 @@ components:
           type: string
         response:
           $ref: '#/components/schemas/Message'
+    ChatSummary:
+      type: object
+      additionalProperties: false
+      required: [id, createdAt, updatedAt, lastMessagePreview, lastMessageAt]
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        lastMessagePreview:
+          type: string
+        lastMessageAt:
+          type: string
+          format: date-time
+    ListChatsResponse:
+      type: object
+      additionalProperties: false
+      required: [chats]
+      properties:
+        chats:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatSummary'
     ListMessagesResponse:
       type: object
       additionalProperties: false

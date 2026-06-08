@@ -46,7 +46,6 @@ services:
     image: ${CLASSIFIER_IMAGE:-ghcr.io/ravilock/sentir-mais-classifier:latest}
     container_name: sentir-mais-classifier
     restart: unless-stopped
-    # gpus: all
     environment:
       HOST: 0.0.0.0
       PORT: 8010

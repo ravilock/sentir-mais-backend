@@ -29,7 +29,7 @@ func (s chatHandlerAuthStub) Authenticate(_ context.Context, _ string) (domain.U
 func TestChatHandler_CreateChat(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
 	creator := newMockChatCreator(t)
-	handler := NewChatHandler(newTestHTTPLogger(), creator, newMockMessageSender(t), newMockMessagesLister(t))
+	handler := NewChatHandler(newTestHTTPLogger(), creator, newMockMessageSender(t), newMockChatsLister(t), newMockMessagesLister(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/chats", bytes.NewReader([]byte(`{"initialMessage":"I need help"}`)))
 	req.Header.Set("Authorization", "Bearer tok_123")
@@ -53,7 +53,7 @@ func TestChatHandler_CreateChat(t *testing.T) {
 
 func TestChatHandler_CreateChatValidation(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
-	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
+	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), newMockMessageSender(t), newMockChatsLister(t), newMockMessagesLister(t))
 	req := httptest.NewRequest(http.MethodPost, "/chats", bytes.NewReader([]byte(`{"initialMessage":"   "}`)))
 	req.Header.Set("Authorization", "Bearer tok_123")
 	rec := httptest.NewRecorder()
@@ -68,7 +68,7 @@ func TestChatHandler_CreateChatValidation(t *testing.T) {
 func TestChatHandler_SendMessage(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
 	sender := newMockMessageSender(t)
-	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), sender, newMockMessagesLister(t))
+	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), sender, newMockChatsLister(t), newMockMessagesLister(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/chats/cht_123/messages", bytes.NewReader([]byte(`{"message":"follow up"}`)))
 	req.SetPathValue("chatId", "cht_123")
@@ -89,7 +89,7 @@ func TestChatHandler_SendMessage(t *testing.T) {
 
 func TestChatHandler_SendMessageValidation(t *testing.T) {
 	require.NoError(t, validations.InitValidator())
-	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), newMockMessageSender(t), newMockMessagesLister(t))
+	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), newMockMessageSender(t), newMockChatsLister(t), newMockMessagesLister(t))
 	req := httptest.NewRequest(http.MethodPost, "/chats/cht_123/messages", bytes.NewReader([]byte(`{"message":""}`)))
 	req.SetPathValue("chatId", "cht_123")
 	req.Header.Set("Authorization", "Bearer tok_123")
@@ -104,7 +104,7 @@ func TestChatHandler_SendMessageValidation(t *testing.T) {
 
 func TestChatHandler_ListMessages(t *testing.T) {
 	lister := newMockMessagesLister(t)
-	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), newMockMessageSender(t), lister)
+	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), newMockMessageSender(t), newMockChatsLister(t), lister)
 
 	t.Run("should return messages", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/chats/cht_123/messages", nil)
@@ -145,5 +145,34 @@ func TestChatHandler_ListMessages(t *testing.T) {
 
 		require.Equal(t, http.StatusNotFound, rec.Code)
 		require.JSONEq(t, `{"message":"chat not found"}`, rec.Body.String())
+	})
+}
+
+func TestChatHandler_ListChats(t *testing.T) {
+	lister := newMockChatsLister(t)
+	handler := NewChatHandler(newTestHTTPLogger(), newMockChatCreator(t), newMockMessageSender(t), lister, newMockMessagesLister(t))
+
+	t.Run("should return chats in response shape", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/chats", nil)
+		req.Header.Set("Authorization", "Bearer tok_123")
+		rec := httptest.NewRecorder()
+
+		now := time.Date(2026, time.June, 7, 21, 15, 0, 0, time.UTC)
+		lister.EXPECT().
+			ListChats(mock.Anything, "usr_123").
+			Return([]domain.ChatSummary{{
+				ID:                 "cht_123",
+				CreatedAt:          now.Add(-time.Hour),
+				UpdatedAt:          now,
+				LastMessagePreview: "Hoje eu chorei depois da conversa com meu chefe.",
+				LastMessageAt:      now,
+			}}, nil).
+			Once()
+
+		protected := httpmiddleware.RequireAuth(chatHandlerAuthStub{user: domain.User{ID: "usr_123"}})(http.HandlerFunc(handler.ListChats))
+		protected.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.JSONEq(t, `{"chats":[{"id":"cht_123","createdAt":"2026-06-07T20:15:00Z","updatedAt":"2026-06-07T21:15:00Z","lastMessagePreview":"Hoje eu chorei depois da conversa com meu chefe.","lastMessageAt":"2026-06-07T21:15:00Z"}]}`, rec.Body.String())
 	})
 }

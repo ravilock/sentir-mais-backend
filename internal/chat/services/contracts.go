@@ -15,6 +15,10 @@ type chatFinder interface {
 	FindByID(ctx context.Context, id string) (domain.Chat, error)
 }
 
+type chatLister interface {
+	ListByUserID(ctx context.Context, userID string) ([]domain.Chat, error)
+}
+
 type chatUpdater interface {
 	Update(ctx context.Context, chat domain.Chat) error
 }
@@ -25,6 +29,10 @@ type messageCreator interface {
 
 type messageLister interface {
 	ListByChatID(ctx context.Context, chatID string) ([]domain.Message, error)
+}
+
+type latestMessageFinder interface {
+	FindLatestByChatID(ctx context.Context, chatID string) (domain.Message, error)
 }
 
 type llmResponder interface {

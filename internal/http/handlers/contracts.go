@@ -23,6 +23,10 @@ type messageSender interface {
 	SendMessage(ctx context.Context, chatID, userID, content string) (domain.Message, error)
 }
 
+type chatsLister interface {
+	ListChats(ctx context.Context, userID string) ([]domain.ChatSummary, error)
+}
+
 type messagesLister interface {
 	ListMessages(ctx context.Context, chatID, userID string) ([]domain.Message, error)
 }

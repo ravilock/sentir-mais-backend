@@ -34,7 +34,7 @@ func TestWorkerProcessOne(t *testing.T) {
 		require.Zero(t, queue.retryCount)
 		require.Equal(t, "cht_123", queue.lockChatID)
 		require.Equal(t, "anj_123", queue.lockOwner)
-		require.Equal(t, 2*time.Minute, queue.lockTTL)
+		require.Equal(t, 15*time.Minute, queue.lockTTL)
 		require.Equal(t, 1, queue.releaseCount)
 	})
 

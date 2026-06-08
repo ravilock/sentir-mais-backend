@@ -20,7 +20,7 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 		enqueuer := &capturingAnalysisJobEnqueuer{}
 
 		now := time.Date(2026, time.May, 31, 14, 0, 0, 0, time.UTC)
-		service := NewCreateChatService(chats, messages, responder, enqueuer)
+		service := NewCreateChatService(chats, messages, responder, enqueuer, testLogger())
 		service.clock = clock
 
 		clock.EXPECT().Now().Return(now).Once()
@@ -64,7 +64,7 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 		enqueuer := &capturingAnalysisJobEnqueuer{err: expectedErr}
 
 		now := time.Date(2026, time.May, 31, 14, 30, 0, 0, time.UTC)
-		service := NewCreateChatService(chats, messages, responder, enqueuer)
+		service := NewCreateChatService(chats, messages, responder, enqueuer, testLogger())
 		service.clock = clock
 
 		clock.EXPECT().Now().Return(now).Once()

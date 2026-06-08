@@ -24,7 +24,7 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 		enqueuer := &capturingAnalysisJobEnqueuer{}
 
 		now := time.Date(2026, time.May, 31, 15, 0, 0, 0, time.UTC)
-		service := NewSendMessageService(chats, messages, history, updater, responder, enqueuer)
+		service := NewSendMessageService(chats, messages, history, updater, responder, enqueuer, testLogger())
 		service.clock = clock
 
 		chatRecord := domain.Chat{
@@ -99,7 +99,7 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 	})
 
 	t.Run("should reject empty content", func(t *testing.T) {
-		service := NewSendMessageService(newMockChatFinder(t), newMockMessageCreator(t), newMockMessageLister(t), newMockChatUpdater(t), newMockLlmResponder(t), nil)
+		service := NewSendMessageService(newMockChatFinder(t), newMockMessageCreator(t), newMockMessageLister(t), newMockChatUpdater(t), newMockLlmResponder(t), nil, testLogger())
 
 		response, err := service.SendMessage(context.Background(), "cht_123", "usr_123", "   ")
 
@@ -109,7 +109,7 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 
 	t.Run("should return not found when chat belongs to another user", func(t *testing.T) {
 		chats := newMockChatFinder(t)
-		service := NewSendMessageService(chats, newMockMessageCreator(t), newMockMessageLister(t), newMockChatUpdater(t), newMockLlmResponder(t), nil)
+		service := NewSendMessageService(chats, newMockMessageCreator(t), newMockMessageLister(t), newMockChatUpdater(t), newMockLlmResponder(t), nil, testLogger())
 
 		chats.EXPECT().
 			FindByID(mock.Anything, "cht_123").
@@ -133,7 +133,7 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 		enqueuer := &capturingAnalysisJobEnqueuer{err: expectedErr}
 
 		now := time.Date(2026, time.May, 31, 16, 0, 0, 0, time.UTC)
-		service := NewSendMessageService(chats, messages, history, updater, responder, enqueuer)
+		service := NewSendMessageService(chats, messages, history, updater, responder, enqueuer, testLogger())
 		service.clock = clock
 
 		chatRecord := domain.Chat{

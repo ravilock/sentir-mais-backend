@@ -14,7 +14,7 @@ const (
 	defaultConsumeTimeout = time.Second
 	defaultRetryDelay     = 30 * time.Second
 	defaultLockRetryDelay = time.Second
-	defaultChatLockTTL    = 2 * time.Minute
+	defaultChatLockTTL    = 15 * time.Minute
 	defaultRetryLimit     = int64(100)
 )
 

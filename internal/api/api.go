@@ -83,6 +83,16 @@ func NewServer(cfg config.Config) (Server, error) {
 		_ = connection.Close(context.Background())
 		return nil, err
 	}
+	dailySummaryRepository, err := analysisrepositories.NewDailySummaryRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
+	weeklySummaryRepository, err := analysisrepositories.NewWeeklySummaryRepository(storeCtx, connection.Database)
+	if err != nil {
+		_ = connection.Close(context.Background())
+		return nil, err
+	}
 
 	registerService := authservices.NewRegisterService(userRepository, userRepository, sessionRepository, cfg.SessionTTL)
 	loginService := authservices.NewLoginService(userRepository, sessionRepository, cfg.SessionTTL)
@@ -96,8 +106,9 @@ func NewServer(cfg config.Config) (Server, error) {
 		extractor = prompterClient
 	}
 	classifierClient := classifier.NewClient(cfg.ClassifierBaseURL, cfg.ClassifierAPIKey, cfg.ClassifierTimeout)
-	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor)
-	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor)
+	summaryWriter := dashboardservices.NewSummaryWriter(messageAnalysisRepository, dailySummaryRepository, weeklySummaryRepository)
+	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor).WithSummaries(summaryWriter)
+	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder).WithAnalysis(classifierClient, messageAnalysisRepository).WithExtraction(extractor).WithSummaries(summaryWriter)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	dashboardService := dashboardservices.NewGetWeekService()
 

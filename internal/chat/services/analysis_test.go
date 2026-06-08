@@ -58,7 +58,7 @@ func TestPersistMessageAnalysis(t *testing.T) {
 			}).
 			Once()
 
-		err := persistMessageAnalysis(context.Background(), nil, extractor, analyses, clock, history, userMessage)
+		err := persistMessageAnalysis(context.Background(), nil, extractor, analyses, nil, clock, history, userMessage)
 
 		require.NoError(t, err)
 	})
@@ -101,7 +101,7 @@ func TestPersistMessageAnalysis(t *testing.T) {
 			}).
 			Once()
 
-		err := persistMessageAnalysis(context.Background(), feelingClassifier, extractor, analyses, clock, history, userMessage)
+		err := persistMessageAnalysis(context.Background(), feelingClassifier, extractor, analyses, nil, clock, history, userMessage)
 
 		require.NoError(t, err)
 	})
@@ -155,7 +155,7 @@ func TestPersistMessageAnalysis(t *testing.T) {
 			}).
 			Once()
 
-		err := persistMessageAnalysis(context.Background(), feelingClassifier, extractor, analyses, clock, history, userMessage)
+		err := persistMessageAnalysis(context.Background(), feelingClassifier, extractor, analyses, nil, clock, history, userMessage)
 
 		require.NoError(t, err)
 	})
@@ -192,9 +192,77 @@ func TestPersistMessageAnalysis(t *testing.T) {
 			}).
 			Once()
 
-		err := persistMessageAnalysis(context.Background(), feelingClassifier, nil, analyses, clock, nil, userMessage)
+		err := persistMessageAnalysis(context.Background(), feelingClassifier, nil, analyses, nil, clock, nil, userMessage)
 
 		require.NoError(t, err)
+	})
+
+	t.Run("should update summaries after persisting analysis", func(t *testing.T) {
+		feelingClassifier := newMockFeelingClassifier(t)
+		analyses := newMockMessageAnalysisCreator(t)
+		clock := newMockClock(t)
+		summaries := &capturingSummaryWriter{}
+
+		now := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
+		userMessage := domain.Message{
+			ID:      "msg_user",
+			ChatID:  "cht_123",
+			UserID:  "usr_123",
+			Content: "I argued with my manager and felt anxious",
+		}
+
+		clock.EXPECT().Now().Return(now).Once()
+		feelingClassifier.EXPECT().
+			Classify(mock.Anything, userMessage.Content).
+			Return(domain.ClassificationResult{
+				PrimaryFeeling: domain.FeelingScore{Label: "anxious", Confidence: 0.91},
+				ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+			}, nil).
+			Once()
+		analyses.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
+			Return(nil).
+			Once()
+
+		err := persistMessageAnalysis(context.Background(), feelingClassifier, nil, analyses, summaries, clock, nil, userMessage)
+
+		require.NoError(t, err)
+		require.Len(t, summaries.analyses, 1)
+		require.Equal(t, "usr_123", summaries.analyses[0].UserID)
+		require.Equal(t, "anxious", summaries.analyses[0].PrimaryFeeling.Label)
+	})
+
+	t.Run("should return summary update errors after analysis persistence", func(t *testing.T) {
+		feelingClassifier := newMockFeelingClassifier(t)
+		analyses := newMockMessageAnalysisCreator(t)
+		clock := newMockClock(t)
+		summaries := &capturingSummaryWriter{err: context.DeadlineExceeded}
+
+		now := time.Date(2026, time.June, 1, 12, 30, 0, 0, time.UTC)
+		userMessage := domain.Message{
+			ID:      "msg_user",
+			ChatID:  "cht_123",
+			UserID:  "usr_123",
+			Content: "I argued with my manager and felt anxious",
+		}
+
+		clock.EXPECT().Now().Return(now).Once()
+		feelingClassifier.EXPECT().
+			Classify(mock.Anything, userMessage.Content).
+			Return(domain.ClassificationResult{
+				PrimaryFeeling: domain.FeelingScore{Label: "anxious", Confidence: 0.91},
+				ModelName:      "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+			}, nil).
+			Once()
+		analyses.EXPECT().
+			Create(mock.Anything, mock.AnythingOfType("domain.MessageAnalysis")).
+			Return(nil).
+			Once()
+
+		err := persistMessageAnalysis(context.Background(), feelingClassifier, nil, analyses, summaries, clock, nil, userMessage)
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.Len(t, summaries.analyses, 1)
 	})
 }
 
@@ -212,4 +280,14 @@ func TestBuildClassifierInputText(t *testing.T) {
 
 		require.Equal(t, classifierInputText, input)
 	})
+}
+
+type capturingSummaryWriter struct {
+	analyses []domain.MessageAnalysis
+	err      error
+}
+
+func (w *capturingSummaryWriter) UpdateForAnalysis(_ context.Context, analysis domain.MessageAnalysis) error {
+	w.analyses = append(w.analyses, analysis)
+	return w.err
 }

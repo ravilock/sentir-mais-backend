@@ -43,6 +43,10 @@ type messageAnalysisCreator interface {
 	Create(ctx context.Context, analysis domain.MessageAnalysis) error
 }
 
+type summaryWriter interface {
+	UpdateForAnalysis(ctx context.Context, analysis domain.MessageAnalysis) error
+}
+
 type clock interface {
 	Now() time.Time
 }

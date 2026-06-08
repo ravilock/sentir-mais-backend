@@ -14,6 +14,7 @@ func persistMessageAnalysis(
 	classifierClient feelingClassifier,
 	extractor llmExtractor,
 	analyses messageAnalysisCreator,
+	summaries summaryWriter,
 	serviceClock clock,
 	history []domain.Message,
 	message domain.Message,
@@ -72,7 +73,15 @@ func persistMessageAnalysis(
 		return nil
 	}
 
-	return analyses.Create(ctx, analysis)
+	if err := analyses.Create(ctx, analysis); err != nil {
+		return err
+	}
+
+	if summaries == nil {
+		return nil
+	}
+
+	return summaries.UpdateForAnalysis(ctx, analysis)
 }
 
 func boolPointer(value bool) *bool {

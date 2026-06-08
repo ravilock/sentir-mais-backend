@@ -106,6 +106,15 @@ type TimelinePoint struct {
 	SupportingEvent string
 }
 
+type DailySummary struct {
+	UserID           string
+	DayStart         time.Time
+	DominantFeelings []FeelingScore
+	MainEvents       []string
+	TimelinePoints   []TimelinePoint
+	GeneratedAt      time.Time
+}
+
 type WeeklySummary struct {
 	UserID           string
 	WeekStart        time.Time

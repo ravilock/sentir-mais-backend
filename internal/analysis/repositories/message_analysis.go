@@ -89,6 +89,32 @@ func (r *MessageAnalysisRepository) Create(ctx context.Context, analysis domain.
 	return err
 }
 
+func (r *MessageAnalysisRepository) ListByUserAndCreatedAtRange(ctx context.Context, userID string, start, end time.Time) ([]domain.MessageAnalysis, error) {
+	cursor, err := r.collection.Find(ctx, bson.M{
+		"user_id": userID,
+		"created_at": bson.M{
+			"$gte": start.UTC(),
+			"$lt":  end.UTC(),
+		},
+	}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var documents []messageAnalysisDocument
+	if err := cursor.All(ctx, &documents); err != nil {
+		return nil, err
+	}
+
+	analyses := make([]domain.MessageAnalysis, 0, len(documents))
+	for _, document := range documents {
+		analyses = append(analyses, document.toDomain())
+	}
+
+	return analyses, nil
+}
+
 func (r *MessageAnalysisRepository) ensureIndexes(ctx context.Context) error {
 	_, err := r.collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
@@ -121,6 +147,18 @@ func toFeelingScoreDocuments(scores []domain.FeelingScore) []feelingScoreDocumen
 	}
 
 	return documents
+}
+
+func toFeelingScores(scores []feelingScoreDocument) []domain.FeelingScore {
+	result := make([]domain.FeelingScore, 0, len(scores))
+	for _, score := range scores {
+		result = append(result, domain.FeelingScore{
+			Label:      score.Label,
+			Confidence: score.Confidence,
+		})
+	}
+
+	return result
 }
 
 func toContextGapStrings(gaps []domain.ContextGap) []string {
@@ -158,5 +196,66 @@ func toExtractedEventDocument(event *domain.ExtractedEvent) *extractedEventDocum
 			ImmediateDanger:  event.RiskFlags.ImmediateDanger,
 		},
 		ConfidenceNotes: event.ConfidenceNotes,
+	}
+}
+
+func (document messageAnalysisDocument) toDomain() domain.MessageAnalysis {
+	return domain.MessageAnalysis{
+		ID:                  document.ID,
+		MessageID:           document.MessageID,
+		ChatID:              document.ChatID,
+		UserID:              document.UserID,
+		SourceText:          document.SourceText,
+		ClassifierInputText: document.ClassifierInputText,
+		PrimaryFeeling: domain.FeelingScore{
+			Label:      document.PrimaryFeeling.Label,
+			Confidence: document.PrimaryFeeling.Confidence,
+		},
+		SecondaryFeelings:  toFeelingScores(document.SecondaryFeelings),
+		AllScores:          toFeelingScores(document.AllScores),
+		EnoughContext:      document.EnoughContext,
+		ContextGaps:        toContextGaps(document.ContextGaps),
+		ExtractedEvent:     toExtractedEvent(document.ExtractedEvent),
+		ClassifierProvider: document.ClassifierProvider,
+		ClassifierModel:    document.ClassifierModel,
+		CreatedAt:          document.CreatedAt.UTC(),
+	}
+}
+
+func toContextGaps(values []string) []domain.ContextGap {
+	gaps := make([]domain.ContextGap, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+
+		gaps = append(gaps, domain.ContextGap(value))
+	}
+
+	return gaps
+}
+
+func toExtractedEvent(document *extractedEventDocument) *domain.ExtractedEvent {
+	if document == nil {
+		return nil
+	}
+
+	return &domain.ExtractedEvent{
+		EnoughContext:                    document.EnoughContext,
+		ContextGaps:                      toContextGaps(document.ContextGaps),
+		EventSummary:                     document.EventSummary,
+		WhatHappened:                     document.WhatHappened,
+		FeltEmotionsDescribedByUser:      append([]string(nil), document.FeltEmotionsDescribedByUser...),
+		UserReaction:                     document.UserReaction,
+		ExpectedOutcomeOrSelfExpectation: document.ExpectedOutcomeOrSelfExpectation,
+		PeopleInvolved:                   append([]string(nil), document.PeopleInvolved...),
+		Setting:                          document.Setting,
+		TimeReference:                    document.TimeReference,
+		RiskFlags: domain.RiskFlags{
+			SelfHarm:         document.RiskFlags.SelfHarm,
+			SuicidalIdeation: document.RiskFlags.SuicidalIdeation,
+			ImmediateDanger:  document.RiskFlags.ImmediateDanger,
+		},
+		ConfidenceNotes: document.ConfidenceNotes,
 	}
 }

@@ -125,8 +125,8 @@ func NewServer(cfg config.Config) (Server, error) {
 		_ = redisClient.Close()
 		return nil, err
 	}
-	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder, analysisQueue)
-	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder, analysisQueue)
+	createChatService := chatservices.NewCreateChatService(chatRepository, messageRepository, responder, analysisQueue, logger.With("service", "create-chat"))
+	sendMessageService := chatservices.NewSendMessageService(chatRepository, messageRepository, messageRepository, chatRepository, responder, analysisQueue, logger.With("service", "send-message"))
 	listChatsService := chatservices.NewListChatsService(chatRepository, messageRepository)
 	listMessagesService := chatservices.NewListMessagesService(chatRepository, messageRepository)
 	summaryWriter := dashboardservices.NewSummaryWriter(messageAnalysisRepository, dailySummaryRepository, weeklySummaryRepository)

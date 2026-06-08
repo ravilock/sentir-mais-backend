@@ -55,7 +55,7 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 		require.Zero(t, job.Attempt)
 	})
 
-	t.Run("should fail when analysis job cannot be enqueued", func(t *testing.T) {
+	t.Run("should still return chat response when analysis job cannot be enqueued", func(t *testing.T) {
 		chats := newMockChatCreator(t)
 		messages := newMockMessageCreator(t)
 		responder := newMockLlmResponder(t)
@@ -81,8 +81,11 @@ func TestCreateChatService_CreateChat(t *testing.T) {
 			Return(nil).
 			Twice()
 
-		_, _, err := service.CreateChat(context.Background(), "usr_123", " initial vent ")
+		chatRecord, response, err := service.CreateChat(context.Background(), "usr_123", " initial vent ")
 
-		require.ErrorIs(t, err, expectedErr)
+		require.NoError(t, err)
+		require.NotEmpty(t, chatRecord.ID)
+		require.Equal(t, "assistant reply", response.Content)
+		require.Equal(t, 0, enqueuer.jobCount())
 	})
 }

@@ -2,10 +2,16 @@ package services
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"sync"
 
 	analysisqueue "github.com/ravilock/sentir-mais-backend/internal/analysis/queue"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stdout, nil))
+}
 
 type capturingAnalysisJobEnqueuer struct {
 	mu   sync.Mutex

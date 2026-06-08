@@ -122,7 +122,7 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 		require.Equal(t, domain.Message{}, response)
 	})
 
-	t.Run("should fail when analysis job cannot be enqueued", func(t *testing.T) {
+	t.Run("should still return assistant response when analysis job cannot be enqueued", func(t *testing.T) {
 		chats := newMockChatFinder(t)
 		messages := newMockMessageCreator(t)
 		history := newMockMessageLister(t)
@@ -152,7 +152,9 @@ func TestSendMessageService_SendMessage(t *testing.T) {
 
 		response, err := service.SendMessage(context.Background(), "cht_123", "usr_123", " new message ")
 
-		require.ErrorIs(t, err, expectedErr)
-		require.Equal(t, domain.Message{}, response)
+		require.NoError(t, err)
+		require.Equal(t, "assistant reply", response.Content)
+		require.Equal(t, domain.SenderAssistant, response.Sender)
+		require.Equal(t, 0, enqueuer.jobCount())
 	})
 }

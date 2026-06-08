@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,10 +19,11 @@ type SendMessageService struct {
 	updater   chatUpdater
 	responder llmResponder
 	analysis  analysisJobEnqueuer
+	logger    *slog.Logger
 	clock     clock
 }
 
-func NewSendMessageService(chats chatFinder, messages messageCreator, history messageLister, updater chatUpdater, responder llmResponder, analysis analysisJobEnqueuer) *SendMessageService {
+func NewSendMessageService(chats chatFinder, messages messageCreator, history messageLister, updater chatUpdater, responder llmResponder, analysis analysisJobEnqueuer, logger *slog.Logger) *SendMessageService {
 	return &SendMessageService{
 		chats:     chats,
 		messages:  messages,
@@ -29,6 +31,7 @@ func NewSendMessageService(chats chatFinder, messages messageCreator, history me
 		updater:   updater,
 		responder: responder,
 		analysis:  analysis,
+		logger:    logger,
 		clock:     realClock{},
 	}
 }
@@ -79,24 +82,23 @@ func (s *SendMessageService) SendMessage(ctx context.Context, chatID, userID, co
 	if err := s.updater.Update(ctx, chatRecord); err != nil {
 		return domain.Message{}, err
 	}
-	if err := s.enqueueAnalysis(ctx, userMessage, now); err != nil {
-		return domain.Message{}, err
-	}
+	s.enqueueAnalysis(ctx, userMessage, now)
 
 	return assistantMessage, nil
 }
 
-func (s *SendMessageService) enqueueAnalysis(ctx context.Context, message domain.Message, enqueuedAt time.Time) error {
+func (s *SendMessageService) enqueueAnalysis(ctx context.Context, message domain.Message, enqueuedAt time.Time) {
 	if s.analysis == nil {
-		return nil
+		return
 	}
 
 	jobID, err := id.New("anj")
 	if err != nil {
-		return err
+		s.logAnalysisEnqueueFailure(ctx, message, err)
+		return
 	}
 
-	return s.analysis.Enqueue(ctx, analysisqueue.AnalysisJob{
+	if err := s.analysis.Enqueue(ctx, analysisqueue.AnalysisJob{
 		JobID:            jobID,
 		ChatID:           message.ChatID,
 		UserID:           message.UserID,
@@ -104,7 +106,18 @@ func (s *SendMessageService) enqueueAnalysis(ctx context.Context, message domain
 		MessageCreatedAt: message.CreatedAt,
 		EnqueuedAt:       enqueuedAt,
 		Stage:            analysisqueue.StageExtract,
-	})
+	}); err != nil {
+		s.logAnalysisEnqueueFailure(ctx, message, err)
+	}
+}
+
+func (s *SendMessageService) logAnalysisEnqueueFailure(ctx context.Context, message domain.Message, err error) {
+	s.logger.ErrorContext(ctx, "analysis job enqueue failed",
+		"chat_id", message.ChatID,
+		"user_id", message.UserID,
+		"message_id", message.ID,
+		"error", err,
+	)
 }
 
 func authorizeChat(ctx context.Context, finder chatFinder, chatID, userID string) (domain.Chat, error) {
